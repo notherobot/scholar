@@ -1,13 +1,16 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.7.27';
-const APP_VERSION_DATE = '2026-08-12T00:00:00Z';
+const APP_VERSION = 'v0.7.28';
+const APP_VERSION_DATE = '2026-08-12T01:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.7.28', date: '2026-08-12T01:00:00Z', notes: [
+    'Catches another shape of untagged thinking: models (like Gemma) that narrate the request ("The user is asking...") before answering now have that narration hidden too',
+  ] },
   { version: 'v0.7.27', date: '2026-08-12T00:00:00Z', notes: [
     'Gemma is now the default model on startup if available',
     'Thinking/reasoning blocks are now hidden from display — only the answer is shown',
@@ -1204,6 +1207,10 @@ const ANSWER_OPENER = /^\s{0,3}>?\s*(?:here'?s|here\s+is|below\s+is|this\s+is)\s
 // Markdown list/heading/quote/table starters. List markers require a trailing
 // space so bold text (**x**) and decimals (3.14) aren't mistaken for lists.
 const LISTY = /^(?:[-*]\s|>|\d+[.)]\s|#{1,6}\s|\|)/;
+// D) A block that talks about "the user" in third person, or is nothing but a
+// quoted restatement of the prompt — the tell for self-narration (see rule D
+// in findAnswerBoundary below).
+const SELF_NARRATION_CUE = /\bthe user\b|^["“][\s\S]*["”]\s*$/i;
 
 // Close a dangling ``` fence so a split doesn't leak broken markdown.
 function balanceFences(s) {
@@ -1259,10 +1266,31 @@ function findAnswerBoundary(text) {
     if (answer.trim().length >= 8) return { reasoning: text.slice(0, glueEnd), answer };
   }
 
+  const blocks = text.split(/\n\s*\n/);
+
+  // D) Self-referential narration ("the user is asking…", a quoted restatement
+  // of the prompt) leading directly into a list is the model planning its
+  // answer out loud before writing it (common on models with no real reasoning
+  // channel, like Gemma). Narrow on purpose: a short intro line before a list
+  // is completely normal ("Here are the options:"), so this only fires when a
+  // leading block explicitly references the user or quotes the request.
+  let listIdx = -1;
+  for (let i = 0; i < blocks.length; i++) {
+    if (LISTY.test(blocks[i].trim().split('\n')[0] || '')) { listIdx = i; break; }
+  }
+  if (listIdx >= 1 && listIdx <= 3) {
+    const lead = blocks.slice(0, listIdx);
+    const allShort = lead.every(b => b.trim().split(/\s+/).length <= 25);
+    const hasCue = lead.some(b => SELF_NARRATION_CUE.test(b.trim()));
+    if (allShort && hasCue) {
+      const answer = blocks.slice(listIdx).join('\n\n');
+      if (answer.trim()) return { reasoning: lead.join('\n\n'), answer };
+    }
+  }
+
   // Narrow, safe structural rule: a single plain-prose block that directly
   // follows a block of reasoning steps (a list) is the answer. This only fires
   // for the clean "steps → answer" shape, never when prose meta precedes it.
-  const blocks = text.split(/\n\s*\n/);
   let end = blocks.length - 1;
   while (end >= 0 && !blocks[end].trim()) end--;
   if (end >= 1) {
@@ -1279,13 +1307,19 @@ function findAnswerBoundary(text) {
 }
 
 function detectFreeformReasoning(text, streaming) {
-  if (!REASON_PREAMBLE.test(text)) return null;
-
+  // Structural rules inside findAnswerBoundary carry their own precision
+  // guards, so they run unconditionally (matching how the <think>-tag and
+  // channel-token paths already call it). REASON_PREAMBLE is only used below,
+  // to decide whether to collapse into a "Thinking…" placeholder while no
+  // boundary has appeared yet — without it, plenty of normal answers would
+  // flash that placeholder before settling.
   const found = findAnswerBoundary(text);
   if (found) return found;
 
-  // Still streaming: keep it collapsed as "Thinking…" until the boundary arrives.
-  if (streaming) return { reasoning: text, answer: '', streaming: true };
+  if (streaming && REASON_PREAMBLE.test(text)) {
+    // Still streaming: keep it collapsed as "Thinking…" until the boundary arrives.
+    return { reasoning: text, answer: '', streaming: true };
+  }
 
   // No confident boundary — don't collapse (never hide or mangle the answer).
   return null;
