@@ -1,13 +1,17 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.7.26';
-const APP_VERSION_DATE = '2026-08-08T02:00:00Z';
+const APP_VERSION = 'v0.7.27';
+const APP_VERSION_DATE = '2026-08-12T00:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.7.27', date: '2026-08-12T00:00:00Z', notes: [
+    'Gemma is now the default model on startup if available',
+    'Thinking/reasoning blocks are now hidden from display — only the answer is shown',
+  ] },
   { version: 'v0.7.26', date: '2026-08-08T02:00:00Z', notes: [
     'Fixed Low effort toggle — LM Studio expects reasoning: {effort}, not a flat reasoning_effort field, so it was being silently ignored',
   ] },
@@ -833,7 +837,7 @@ function titleCaseSlug(slug) {
 
 // (Re)build the model dropdown from the models LM Studio reports, preserving
 // the current selection where possible so a reconnect doesn't silently switch
-// the active model.
+// the active model. If no previous selection exists, try to default to Gemma.
 function populateModelDropdown(lmModels) {
   const prevValue = modelSelect.value;
 
@@ -858,6 +862,12 @@ function populateModelDropdown(lmModels) {
 
   if ([...modelSelect.options].some(o => o.value === prevValue)) {
     modelSelect.value = prevValue;
+  } else {
+    // No previous selection; try to default to Gemma if available
+    const gemmaModel = lmModels.find(m => m.id.toLowerCase().includes('gemma'));
+    if (gemmaModel) {
+      modelSelect.value = gemmaModel.id;
+    }
   }
   state.currentModel = modelSelect.value || null;
 }
@@ -1128,22 +1138,14 @@ function renderMessage(text, streaming) {
     const chFinal = afterThink.match(CHANNEL_FINAL_RE);
     let html = pre.trim() ? renderMarkdown(stripSpecialTokens(pre)) : '';
     if (chFinal) {
-      const reasoning = stripSpecialTokens(afterThink.slice(0, chFinal.index));
       const answer = stripSpecialTokens(afterThink.slice(chFinal.index + chFinal[0].length));
-      html += thinkBlock(reasoning, false);
       if (answer.trim()) html += renderMarkdown(answer.trim());
     } else {
-      // No final channel marker (yet). While streaming that's normal; once
-      // complete, try to find the answer inside. If none can be found, render
-      // the block EXPANDED — the answer may be trapped in there, and an open
-      // box beats a hidden answer.
+      // No final channel marker (yet). Try to find the answer inside.
       const inner = stripSpecialTokens(afterThink);
       const split = !streaming ? findAnswerBoundary(inner) : null;
       if (split && split.answer.trim()) {
-        html += thinkBlock(split.reasoning, false);
         html += renderMarkdown(split.answer.trim());
-      } else {
-        html += thinkBlock(inner, !!streaming, !streaming);
       }
     }
     return html || renderMarkdown(stripSpecialTokens(text));
@@ -1152,13 +1154,13 @@ function renderMessage(text, streaming) {
   // Tag-delimited reasoning (<think>…</think>)
   if (/<think(?:ing)?>/i.test(text)) {
     const THINK_RE = /<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/gi;
-    const parts = []; // { type: 'md'|'think', text, open? }
+    const parts = []; // { type: 'md', text }
     let lastIndex = 0;
     let m;
     while ((m = THINK_RE.exec(text)) !== null) {
       const before = text.slice(lastIndex, m.index);
       if (before.trim()) parts.push({ type: 'md', text: before });
-      parts.push({ type: 'think', text: m[1] });
+      // Skip thinking content entirely, don't add it to parts
       lastIndex = THINK_RE.lastIndex;
     }
     const rest = text.slice(lastIndex);
@@ -1166,35 +1168,15 @@ function renderMessage(text, streaming) {
     if (openIdx !== -1) {
       const before = rest.slice(0, openIdx);
       if (before.trim()) parts.push({ type: 'md', text: before });
-      parts.push({ type: 'think', text: rest.slice(openIdx).replace(/^<think(?:ing)?>/i, ''), open: true });
+      // Skip unclosed thinking block
     } else if (rest.trim()) {
       parts.push({ type: 'md', text: rest });
     }
 
-    // If the completed message is nothing but think content — either the tag
-    // never closed, or the reasoning parser swallowed the answer too (the
-    // telltale: answer glued on with no space after the last thought) — find
-    // the boundary inside the last block so the answer isn't trapped. When no
-    // boundary exists, render the block EXPANDED: the answer may be in there,
-    // and an open box beats a hidden answer.
-    if (!streaming) {
-      const last = parts[parts.length - 1];
-      const hasAnswerOutside = parts.some(p => p.type === 'md');
-      if (last && last.type === 'think' && !hasAnswerOutside) {
-        const split = findAnswerBoundary(last.text);
-        if (split && split.answer.trim()) {
-          last.text = split.reasoning;
-          parts.push({ type: 'md', text: split.answer });
-        } else {
-          last.forceOpen = true;
-        }
-      }
-    }
-
+    // Render only the answer parts, skipping all thinking
     let html = '';
     for (const p of parts) {
       if (p.type === 'md') html += renderMarkdown(p.text.trim());
-      else html += thinkBlock(p.text, !!p.open && !!streaming, !!p.forceOpen);
     }
     return html || renderMarkdown(text);
   }
@@ -1202,9 +1184,9 @@ function renderMessage(text, streaming) {
   // Un-tagged reasoning: models that "think out loud" in plain text
   const ff = detectFreeformReasoning(text, streaming);
   if (ff) {
-    let html = ff.reasoning.trim() ? thinkBlock(ff.reasoning, !!ff.streaming) : '';
-    if (ff.answer.trim()) html += renderMarkdown(ff.answer.trim());
-    return html || renderMarkdown(text);
+    // Only render the answer, skip the reasoning part
+    if (ff.answer.trim()) return renderMarkdown(ff.answer.trim());
+    return renderMarkdown(text);
   }
 
   return renderMarkdown(text);
