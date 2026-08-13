@@ -1,13 +1,16 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.7.28';
-const APP_VERSION_DATE = '2026-08-12T01:00:00Z';
+const APP_VERSION = 'v0.7.29';
+const APP_VERSION_DATE = '2026-08-12T02:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.7.29', date: '2026-08-12T02:00:00Z', notes: [
+    'Reasoning-hiding heuristics were mis-hiding real answer content — disabled for now, every message shows raw and unfiltered',
+  ] },
   { version: 'v0.7.28', date: '2026-08-12T01:00:00Z', notes: [
     'Catches another shape of untagged thinking: models (like Gemma) that narrate the request ("The user is asking...") before answering now have that narration hidden too',
   ] },
@@ -1129,8 +1132,13 @@ const CHANNEL_FINAL_RE = /(?:<\|?start\|?>\s*(?:assistant)?\s*)?<\|?channel\|?>\
 const SPECIAL_TOKEN_RE = /<\|?(?:channel|message|start|end|return|im_start|im_end|endoftext|eot_id|assistant|system|developer)\|?>/gi;
 const stripSpecialTokens = (s) => s.replace(SPECIAL_TOKEN_RE, '');
 
+// Disabled for now — the freeform/self-narration heuristics below were
+// mis-hiding real answer content on some models. Flip back to true once
+// that's sorted; until then every message renders raw, unfiltered.
+const REASONING_HIDING_ENABLED = false;
+
 function renderMessage(text, streaming) {
-  if (collapseToggle && !collapseToggle.checked) return renderMarkdown(text);
+  if (!REASONING_HIDING_ENABLED || (collapseToggle && !collapseToggle.checked)) return renderMarkdown(text);
 
   // Channel-token reasoning (checked first — these also often contain lists
   // that would confuse the freeform detector)
