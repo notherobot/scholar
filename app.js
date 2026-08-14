@@ -1,13 +1,17 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.7.29';
-const APP_VERSION_DATE = '2026-08-12T02:00:00Z';
+const APP_VERSION = 'v0.7.30';
+const APP_VERSION_DATE = '2026-08-12T03:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.7.30', date: '2026-08-12T03:00:00Z', notes: [
+    'Fixed a real performance bug: streaming re-rendered the entire message on every single token, which could bog down the tab on long replies — now throttled to ~15 updates/sec',
+    'Invented tool-call syntax that some models (like Gemma) leak as raw text is now swapped for a plain notice instead of showing the garbage pseudo-JSON',
+  ] },
   { version: 'v0.7.29', date: '2026-08-12T02:00:00Z', notes: [
     'Reasoning-hiding heuristics were mis-hiding real answer content — disabled for now, every message shows raw and unfiltered',
   ] },
@@ -1132,12 +1136,23 @@ const CHANNEL_FINAL_RE = /(?:<\|?start\|?>\s*(?:assistant)?\s*)?<\|?channel\|?>\
 const SPECIAL_TOKEN_RE = /<\|?(?:channel|message|start|end|return|im_start|im_end|endoftext|eot_id|assistant|system|developer)\|?>/gi;
 const stripSpecialTokens = (s) => s.replace(SPECIAL_TOKEN_RE, '');
 
+// Some models (seen on Gemma) invent their own tool-call syntax instead of
+// the one LM Studio's grammar constraint recognizes, so it never gets
+// intercepted as a real tool call — it just leaks into the reply as raw
+// pseudo-JSON, e.g. "<|toolcall>call:googlesearch:search{queries:[...]}".
+// Swap it for a plain notice instead of showing that text as if it were part
+// of the answer. Applied unconditionally, ahead of every other render path.
+const LEAKED_TOOLCALL_RE = /<\|?tool_?call\|?>\s*call:[\w.]+:[\w.]+\s*\{[\s\S]*?\}/gi;
+const stripLeakedToolcalls = (s) => s.replace(LEAKED_TOOLCALL_RE,
+  '*(model attempted a tool call in a format this LM Studio setup doesn\'t recognize — nothing ran)*');
+
 // Disabled for now — the freeform/self-narration heuristics below were
 // mis-hiding real answer content on some models. Flip back to true once
 // that's sorted; until then every message renders raw, unfiltered.
 const REASONING_HIDING_ENABLED = false;
 
 function renderMessage(text, streaming) {
+  text = stripLeakedToolcalls(text);
   if (!REASONING_HIDING_ENABLED || (collapseToggle && !collapseToggle.checked)) return renderMarkdown(text);
 
   // Channel-token reasoning (checked first — these also often contain lists
@@ -1540,6 +1555,13 @@ async function generateReply() {
   const tStart = performance.now();
   let firstTokenAt = 0;
   let deltaCount = 0;
+  // Re-rendering (full markdown re-parse + innerHTML replace) on every single
+  // streamed token is O(total tokens²) over a long reply and is what was
+  // bogging the tab down — throttle DOM updates to a steady ~15/sec instead.
+  // The loop always finishes with one untimed final render, so nothing is
+  // ever left stale.
+  let lastRenderAt = 0;
+  const RENDER_INTERVAL_MS = 66;
   let usage = null;
   let finishReason = null;
 
@@ -1786,11 +1808,15 @@ async function generateReply() {
             }
 
             if (changed) {
-              if (!firstTokenAt) { firstTokenAt = performance.now(); state.lastLoadedModel = targetModel; clearSlow(); }
+              const now = performance.now();
+              if (!firstTokenAt) { firstTokenAt = now; state.lastLoadedModel = targetModel; clearSlow(); }
               deltaCount++;
-              bubble.innerHTML = renderMessage(withReasoning(), true);
-              addCopyButtons(bubble);
-              scrollToBottom();
+              if (now - lastRenderAt >= RENDER_INTERVAL_MS) {
+                lastRenderAt = now;
+                bubble.innerHTML = renderMessage(withReasoning(), true);
+                addCopyButtons(bubble);
+                scrollToBottom();
+              }
             }
           } catch(e) {
             if (e instanceof SyntaxError) continue; // partial/garbage line
