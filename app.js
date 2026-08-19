@@ -1,13 +1,17 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.7.35';
-const APP_VERSION_DATE = '2026-08-12T08:00:00Z';
+const APP_VERSION = 'v0.7.36';
+const APP_VERSION_DATE = '2026-08-12T09:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.7.36', date: '2026-08-12T09:00:00Z', notes: [
+    'Fixed a real crash cause during long streaming replies: code blocks were being fully re-syntax-highlighted from scratch on every single token update, since the DOM gets rebuilt each tick — for a long/growing code block that cost compounded for the whole generation. Code now renders plain while streaming and highlights once at the end',
+    'The streaming re-render interval now scales up as a reply grows, capping the worst-case cost instead of grinding the tab down on unusually long generations',
+  ] },
   { version: 'v0.7.35', date: '2026-08-12T08:00:00Z', notes: [
     'New "Data & Storage" section in Settings: shows this chat\'s message/image count and size, plus total storage across all saved chats',
     'Long chats now load windowed to the most recent 50 messages by default (adjustable 10-300) instead of rendering the entire history at once — a banner offers "Load full chat" on demand',
@@ -1387,12 +1391,21 @@ function codeLang(codeEl) {
 
 const looksLikeHtmlDoc = (t) => /^\s*(<!doctype html|<html)/i.test(t) || (/<\w+[^>]*>/.test(t) && /<\/(div|body|button|p|span|h\d|style|script)>/i.test(t));
 
-function addCopyButtons(el) {
+// `streaming` skips syntax highlighting entirely. Each mid-stream tick fully
+// replaces the message's innerHTML (see generateReply), so the freshly
+// re-created <code> element never actually carries the "already
+// highlighted" dataset flag forward — every tick was re-tokenizing the
+// *entire* code block from scratch, and for a long/growing block (a stuck
+// local model repeating itself well past a normal reply length is the
+// classic case) that cost compounds for the whole generation and can bog
+// the tab down badly enough to look like a crash. Code just renders as
+// plain (still monospaced, still selectable/copyable) text while streaming;
+// the final render (streaming=false) highlights it once, for real.
+function addCopyButtons(el, streaming) {
   el.querySelectorAll('pre').forEach(pre => {
     const code = pre.querySelector('code');
 
-    // Syntax highlighting (re-applied per streaming render; cheap at this scale)
-    if (code && !code.dataset.hl) {
+    if (code && !streaming && !code.dataset.hl) {
       const lang = codeLang(code);
       code.innerHTML = microHighlight(code.textContent, lang || 'js');
       code.dataset.hl = '1';
@@ -1541,11 +1554,19 @@ async function generateReply() {
   let deltaCount = 0;
   // Re-rendering (full markdown re-parse + innerHTML replace) on every single
   // streamed token is O(total tokens²) over a long reply and is what was
-  // bogging the tab down — throttle DOM updates to a steady ~15/sec instead.
-  // The loop always finishes with one untimed final render, so nothing is
-  // ever left stale.
+  // bogging the tab down — throttle DOM updates instead. The loop always
+  // finishes with one untimed final render, so nothing is ever left stale.
+  //
+  // The interval itself grows with the message so far: re-parsing and
+  // rebuilding the DOM for a short reply is cheap enough to do ~15x/sec and
+  // still feel live, but that same rebuild on a reply that's grown into the
+  // tens of thousands of characters (a model stuck repeating itself well
+  // past a normal reply length, given max_tokens defaults to 20000, is the
+  // realistic case) gets proportionally more expensive every tick. Capping
+  // the interval bounds the worst case instead of grinding the tab down for
+  // the rest of a very long generation.
   let lastRenderAt = 0;
-  const RENDER_INTERVAL_MS = 66;
+  const renderInterval = () => Math.min(1000, 66 + Math.floor((fullContent.length + reasoning.length) / 100));
   let usage = null;
   let finishReason = null;
 
@@ -1794,10 +1815,10 @@ async function generateReply() {
               const now = performance.now();
               if (!firstTokenAt) { firstTokenAt = now; state.lastLoadedModel = targetModel; clearSlow(); }
               deltaCount++;
-              if (now - lastRenderAt >= RENDER_INTERVAL_MS) {
+              if (now - lastRenderAt >= renderInterval()) {
                 lastRenderAt = now;
                 bubble.innerHTML = renderMessage(withReasoning());
-                addCopyButtons(bubble);
+                addCopyButtons(bubble, true);
                 scrollToBottom();
               }
             }
