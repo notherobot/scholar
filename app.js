@@ -1,13 +1,17 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.7.36';
-const APP_VERSION_DATE = '2026-08-12T09:00:00Z';
+const APP_VERSION = 'v0.7.37';
+const APP_VERSION_DATE = '2026-08-12T10:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.7.37', date: '2026-08-12T10:00:00Z', notes: [
+    'Welcome message fades out over 100ms as soon as you start typing, instead of waiting for the message to send',
+    'iOS: the Chats panel now drags open/closed 1:1 with your finger instead of popping in once a threshold is crossed — matches native side-menu behavior, including a fast-flick shortcut',
+  ] },
   { version: 'v0.7.36', date: '2026-08-12T09:00:00Z', notes: [
     'Fixed a real crash cause during long streaming replies: code blocks were being fully re-syntax-highlighted from scratch on every single token update, since the DOM gets rebuilt each tick — for a long/growing code block that cost compounded for the whole generation. Code now renders plain while streaming and highlights once at the end',
     'The streaming re-render interval now scales up as a reply grows, capping the worst-case cost instead of grinding the tab down on unusually long generations',
@@ -528,12 +532,23 @@ function showSetup() {
 // overflow while it's showing — otherwise a stray touch there triggers an
 // elastic rubber-band bounce with no content backing it.
 function showWelcome(visible) {
-  if (welcome) welcome.style.display = visible ? '' : 'none';
+  if (welcome) {
+    welcome.style.display = visible ? '' : 'none';
+    if (visible) welcome.classList.remove('fade-out');
+  }
   chatContainer.classList.toggle('chat-empty', visible);
 }
 
 function hideWelcome() {
   showWelcome(false);
+}
+
+// Fades the welcome message out the moment the user starts typing, ahead of
+// it actually being hidden (display:none) once the message sends. Reverses
+// if they clear the draft back to empty.
+function updateWelcomeFade() {
+  if (!welcome) return;
+  welcome.classList.toggle('fade-out', userInput.value.trim().length > 0);
 }
 
 function addMessage(role, content, isError) {
@@ -2436,43 +2451,112 @@ function toggleHistory() {
   else closeHistory();
 }
 
-// Swipe-from-left-edge to open the Chats panel. Restricted to iOS installed
-// web apps (Add to Home Screen, standalone display mode) — `navigator.standalone`
-// is only ever `true` there. In an ordinary browser tab (iOS Safari included)
-// a left-edge swipe is the "back" gesture; hijacking it there would fight the
-// browser's own navigation, so this stays off everywhere else.
-function setupEdgeSwipe() {
+// Drags the Chats panel open/closed 1:1 with the finger — like a native iOS
+// side menu (or the Claude app), not a threshold that just pops it open once
+// crossed. Two gestures share the same tracking: an edge swipe from the left
+// when the panel is closed opens it; a swipe anywhere while it's open closes
+// it.
+//
+// Restricted to iOS installed web apps (Add to Home Screen, standalone
+// display mode) — `navigator.standalone` is only ever `true` there. In an
+// ordinary browser tab (iOS Safari included) a left-edge swipe is the "back"
+// gesture; hijacking it there would fight the browser's own navigation, so
+// this stays off everywhere else.
+function setupHistoryPanelSwipe() {
   if (window.navigator.standalone !== true) return;
 
-  const EDGE_ZONE_PX = 24;   // swipe must start within this many px of the left edge
-  const TRIGGER_PX = 60;     // horizontal drag distance needed to open the panel
-  let startX = null, startY = null, tracking = false;
+  const EDGE_ZONE_PX = 24;    // an "opening" drag must start this close to the left edge
+  const CONFIRM_PX = 10;      // drag distance before committing to horizontal vs. a vertical scroll
+  const OPEN_FRACTION = 0.4;  // release past this fraction of the panel's width -> snap open
+  const FLICK_VELOCITY = 0.5; // px/ms — a fast flick commits regardless of distance
+
+  let mode = null;       // 'opening' | 'closing' | null
+  let active = false;    // horizontal intent confirmed — currently steering the panel
+  let startX = 0, startY = 0, startT = 0, lastX = 0, lastT = 0, velocity = 0;
+  let panelWidth = 0;
+
+  function beginDrag(clientX, clientY) {
+    const closed = historyPanel.classList.contains('hidden');
+    if (closed) {
+      if (clientX > EDGE_ZONE_PX) { mode = null; return; }
+      mode = 'opening';
+    } else {
+      mode = 'closing';
+    }
+    startX = lastX = clientX;
+    startY = clientY;
+    startT = lastT = performance.now();
+    velocity = 0;
+    active = false;
+    panelWidth = historyPanel.getBoundingClientRect().width || 300;
+  }
+
+  function setDragPosition(rawOffset) {
+    // rawOffset: 0 (fully closed) .. panelWidth (fully open), regardless of mode.
+    const clamped = Math.max(0, Math.min(panelWidth, rawOffset));
+    historyPanel.style.transform = `translateX(${clamped - panelWidth}px)`;
+    historyOverlay.style.opacity = String(clamped / panelWidth);
+  }
+
+  function endDrag(rawOffset) {
+    historyPanel.classList.remove('dragging');
+    historyOverlay.classList.remove('dragging');
+    historyPanel.style.transform = '';
+    historyOverlay.style.opacity = '';
+    const openEnough = rawOffset / panelWidth >= OPEN_FRACTION || velocity >= FLICK_VELOCITY;
+    const closeEnough = rawOffset / panelWidth <= (1 - OPEN_FRACTION) || velocity <= -FLICK_VELOCITY;
+    if (mode === 'opening') {
+      if (openEnough) openHistory(); // else stays closed — CSS transition snaps it back
+    } else if (mode === 'closing') {
+      if (closeEnough) closeHistory(); else openHistory(); // re-affirm open so the CSS snap plays
+    }
+    mode = null;
+    active = false;
+  }
 
   document.addEventListener('touchstart', (e) => {
-    if (!historyPanel.classList.contains('hidden')) return; // already open
-    const t = e.touches[0];
-    if (t.clientX > EDGE_ZONE_PX) return;
-    startX = t.clientX;
-    startY = t.clientY;
-    tracking = true;
+    if (e.touches.length !== 1) return;
+    beginDrag(e.touches[0].clientX, e.touches[0].clientY);
   }, { passive: true });
 
   document.addEventListener('touchmove', (e) => {
-    if (!tracking) return;
+    if (!mode) return;
     const t = e.touches[0];
     const dx = t.clientX - startX;
     const dy = t.clientY - startY;
-    if (dx >= TRIGGER_PX && dx > Math.abs(dy) * 1.5) {
-      tracking = false;
-      openHistory();
-    } else if (Math.abs(dy) > TRIGGER_PX) {
-      tracking = false; // vertical scroll — not a panel swipe
+
+    if (!active) {
+      if (Math.abs(dx) < CONFIRM_PX && Math.abs(dy) < CONFIRM_PX) return;
+      if (Math.abs(dy) >= Math.abs(dx)) { mode = null; return; } // vertical scroll, not a panel drag
+      active = true;
+      historyPanel.classList.add('dragging');
+      historyOverlay.classList.remove('hidden');
+      historyOverlay.classList.add('dragging');
     }
+
+    const now = performance.now();
+    if (now > lastT) velocity = (t.clientX - lastX) / (now - lastT);
+    lastX = t.clientX; lastT = now;
+
+    const rawOffset = mode === 'opening' ? dx : panelWidth + dx;
+    setDragPosition(rawOffset);
+    e.preventDefault(); // once committed, don't let the page scroll under the drag
+  }, { passive: false });
+
+  document.addEventListener('touchend', (e) => {
+    if (!mode) return;
+    if (!active) { mode = null; return; }
+    const t = e.changedTouches[0];
+    const dx = t.clientX - startX;
+    const rawOffset = mode === 'opening' ? dx : panelWidth + dx;
+    endDrag(rawOffset);
   }, { passive: true });
 
-  const stopTracking = () => { tracking = false; };
-  document.addEventListener('touchend', stopTracking, { passive: true });
-  document.addEventListener('touchcancel', stopTracking, { passive: true });
+  document.addEventListener('touchcancel', () => {
+    if (active) endDrag(mode === 'opening' ? 0 : panelWidth); // snap back to where it started
+    mode = null;
+    active = false;
+  }, { passive: true });
 }
 
 // === Sidebar ===
@@ -2806,7 +2890,7 @@ function setupListeners() {
   modelModalClose.addEventListener('click', closeModelPicker);
   modelModal.addEventListener('click', e => { if (e.target === modelModal) closeModelPicker(); });
   newChatBtn.addEventListener('click', newChat);
-  userInput.addEventListener('input', () => { autoGrow(); updateSendBtn(); });
+  userInput.addEventListener('input', () => { autoGrow(); updateSendBtn(); updateWelcomeFade(); });
   userInput.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -2851,7 +2935,7 @@ function setupListeners() {
   historyOverlay.addEventListener('click', closeHistory);
   historyNew.addEventListener('click', () => { newChat(); if (window.innerWidth < 768) closeHistory(); });
   historySearch.addEventListener('input', renderHistoryList);
-  setupEdgeSwipe();
+  setupHistoryPanelSwipe();
 
   // Version dropdown (desktop only)
   if (versionBtn) {

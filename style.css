@@ -585,9 +585,30 @@ header::before {
   inset: 0;
   background: rgba(0,0,0,0.5);
   z-index: 49;
+  opacity: 1;
+  transition: opacity 0.05s ease;
 }
 
 .overlay.hidden { display: none; }
+
+/* The history overlay specifically stays rendered (off, at opacity 0) while
+   hidden instead of display:none — same reasoning as #history-panel.hidden:
+   an element can't transition a property starting from display:none, so the
+   drag-to-close snap animation needs it to still be paintable. */
+#history-overlay.hidden {
+  display: block !important;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Applied while a finger is actively dragging the history panel — disables
+   the transition so transform/opacity track the touch 1:1 instead of
+   lagging behind it, then removed on release so the final snap open/closed
+   animates normally. See setupHistoryPanelSwipe. */
+#history-panel.dragging,
+#history-overlay.dragging {
+  transition: none;
+}
 
 #sidebar {
   position: fixed;
@@ -804,6 +825,15 @@ header::before {
   justify-content: center;
   text-align: center;
   padding: 40px 20px;
+  opacity: 1;
+  transition: opacity 0.1s ease;
+}
+
+/* Fades out as soon as the composer has text, ahead of the message actually
+   sending — display:none isn't used here so the fade can play out; nothing
+   else occupies this space while the chat is still empty. */
+.welcome-chat.fade-out {
+  opacity: 0;
 }
 
 .welcome-chat p {
