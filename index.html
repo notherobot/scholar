@@ -11,7 +11,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="Scholar_favicon_32.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=0.7.34">
+  <link rel="stylesheet" href="style.css?v=0.7.35">
 </head>
 <body>
   <div id="app">
@@ -92,6 +92,17 @@
             <input type="checkbox" id="stream-toggle" checked>
             <span>Stream responses</span>
           </label>
+        </div>
+        <div class="setting-group">
+          <label>Data &amp; Storage</label>
+          <p class="setting-hint" id="data-stats-text" style="margin-top:0">—</p>
+          <label for="message-load-limit">Messages loaded per chat: <span id="message-load-limit-value">50</span></label>
+          <input type="range" id="message-load-limit" min="10" max="300" step="10" value="50">
+          <p class="setting-hint">Older messages stay saved — this only limits how many render when you open a chat, which is what makes long chats feel heavy to load. A banner at the top lets you load the full chat on demand.</p>
+          <div class="data-actions">
+            <button id="strip-images-btn" class="btn-sm">Remove images from this chat</button>
+            <button id="clear-all-chats-btn" class="btn-sm btn-sm-danger">Clear all chat history</button>
+          </div>
         </div>
         <div class="setting-group">
           <button id="disconnect-btn" class="btn-danger">Disconnect &amp; Change Server</button>
@@ -249,6 +260,6 @@
 
   <script src="marked.min.js"></script>
   <script src="vendor/pdf.min.js"></script>
-  <script src="app.js?v=0.7.34"></script>
+  <script src="app.js?v=0.7.35"></script>
 </body>
 </html>

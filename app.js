@@ -1,13 +1,19 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.7.34';
-const APP_VERSION_DATE = '2026-08-12T07:00:00Z';
+const APP_VERSION = 'v0.7.35';
+const APP_VERSION_DATE = '2026-08-12T08:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.7.35', date: '2026-08-12T08:00:00Z', notes: [
+    'New "Data & Storage" section in Settings: shows this chat\'s message/image count and size, plus total storage across all saved chats',
+    'Long chats now load windowed to the most recent 50 messages by default (adjustable 10-300) instead of rendering the entire history at once — a banner offers "Load full chat" on demand',
+    'Added "Remove images from this chat" and "Clear all chat history" for reclaiming space',
+    'Fixed the composer turning into a stretched oval on multi-line input — its border-radius no longer scales with box height',
+  ] },
   { version: 'v0.7.34', date: '2026-08-12T07:00:00Z', notes: [
     'Raw LaTeX symbols some models emit (e.g. "$\\rightarrow$", "\\leq", "\\alpha") now render as their actual character (→, ≤, α) instead of literal source text',
   ] },
@@ -168,6 +174,14 @@ const state = {
   // ignore the extra fields. See generateReply.
   enableThinking: true,
   lowEffort: false,
+  // How many of the most recent messages get rendered into the DOM when a
+  // chat is opened. Nothing is deleted — this only limits the expensive
+  // part (markdown parse + syntax highlight + DOM build) that makes long
+  // chats feel heavy to load. See renderCurrentMessages/loadFullChat.
+  messageLoadLimit: 50,
+  // True once the user has clicked "Load full chat" for the session that's
+  // currently open — resets on every new chat load (loadSession/newChat).
+  chatFullyLoaded: false,
 };
 
 // === DOM ===
@@ -209,6 +223,11 @@ const tempValue      = $('#temp-value');
 const tokensSlider   = $('#max-tokens');
 const tokensValue    = $('#tokens-value');
 const streamToggle   = $('#stream-toggle');
+const dataStatsText  = $('#data-stats-text');
+const messageLoadLimitSlider = $('#message-load-limit');
+const messageLoadLimitValue  = $('#message-load-limit-value');
+const stripImagesBtn = $('#strip-images-btn');
+const clearAllChatsBtn = $('#clear-all-chats-btn');
 
 const messagesEl     = $('#messages');
 const welcome        = $('#welcome');
@@ -257,6 +276,7 @@ function init() {
   loadSettings();
   loadSessions();
   setupListeners();
+  updateDataStats();
 
   // If we have a saved URL, skip setup and connect
   const savedUrl = localStorage.getItem('lmstudio-server-url');
@@ -290,10 +310,13 @@ function loadSettings() {
   state.apiToken = s.apiToken ?? '';
   state.enableThinking = s.enableThinking ?? true;
   state.lowEffort = s.lowEffort ?? false;
+  state.messageLoadLimit = s.messageLoadLimit ?? 50;
   if (mcpToggle) mcpToggle.checked = state.mcpEnabled;
   if (mcpServersInput) mcpServersInput.value = state.mcpServers;
   if (apiTokenInput) apiTokenInput.value = state.apiToken;
   if (setupToken) setupToken.value = state.apiToken;
+  if (messageLoadLimitSlider) messageLoadLimitSlider.value = state.messageLoadLimit;
+  if (messageLoadLimitValue) messageLoadLimitValue.textContent = state.messageLoadLimit;
   updateMcpUI();
   updateReasoningToggleUI();
 }
@@ -309,6 +332,7 @@ function saveSettings() {
     apiToken: state.apiToken,
     enableThinking: state.enableThinking,
     lowEffort: state.lowEffort,
+    messageLoadLimit: state.messageLoadLimit,
   }));
 }
 
@@ -621,6 +645,114 @@ function renderStoredMessage(msg, index) {
     });
   }
   addUserMessage(text, attachments, index);
+}
+
+// Rebuilds #messages from state.messages, windowed to the most recent
+// messageLoadLimit unless the user has already asked to see everything for
+// this chat (state.chatFullyLoaded). Rendering every message in a long chat
+// — each one a markdown parse + syntax highlight + DOM build — is what makes
+// opening it feel heavy; this keeps that cost bounded by default.
+function renderCurrentMessages() {
+  messagesEl.innerHTML = '';
+  if (welcome) messagesEl.appendChild(welcome);
+  showWelcome(state.messages.length === 0);
+
+  const total = state.messages.length;
+  const limit = state.messageLoadLimit;
+  const truncated = !state.chatFullyLoaded && limit > 0 && total > limit;
+  const startIdx = truncated ? total - limit : 0;
+
+  if (truncated) messagesEl.appendChild(buildTruncatedBanner(total, limit));
+  for (let i = startIdx; i < total; i++) renderStoredMessage(state.messages[i], i);
+
+  updateDataStats();
+}
+
+function buildTruncatedBanner(total, limit) {
+  const banner = document.createElement('div');
+  banner.className = 'truncated-banner';
+  const span = document.createElement('span');
+  span.textContent = `Showing last ${limit} of ${total} messages`;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn-sm';
+  btn.textContent = 'Load full chat';
+  btn.addEventListener('click', loadFullChat);
+  banner.appendChild(span);
+  banner.appendChild(btn);
+  return banner;
+}
+
+function loadFullChat() {
+  state.chatFullyLoaded = true;
+  renderCurrentMessages();
+  scrollToBottom(true);
+}
+
+// Drops every image attachment from the currently open chat's stored
+// messages (text and files are untouched) and re-renders. This is the big
+// lever for chats that got heavy from image uploads — those data URLs live
+// entirely in localStorage/memory, not on a server.
+function stripImagesFromCurrentChat() {
+  if (!state.messages.length) return 0;
+  let removed = 0;
+  state.messages.forEach(m => {
+    if (!Array.isArray(m.content)) return;
+    const before = m.content.length;
+    m.content = m.content.filter(p => p.type !== 'image_url');
+    removed += before - m.content.length;
+    // Collapse back to a plain string once there's nothing left to justify
+    // the array form — matches how a text-only message is normally stored.
+    if (m.content.length === 1 && m.content[0].type === 'text') m.content = m.content[0].text;
+    else if (m.content.length === 0) m.content = '';
+  });
+  if (removed > 0) {
+    saveCurrentSession();
+    renderCurrentMessages();
+  }
+  return removed;
+}
+
+function clearAllChats() {
+  if (!state.sessions.length) return;
+  if (!confirm(`Delete all ${state.sessions.length} saved chat${state.sessions.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
+  state.sessions = [];
+  persistSessions();
+  newChat();
+}
+
+function estimateBytes(obj) {
+  const json = JSON.stringify(obj) || '';
+  try { return new Blob([json]).size; } catch (e) { return json.length; }
+}
+
+function formatBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1024 / 1024).toFixed(2) + ' MB';
+}
+
+// Populates the "Data & Storage" readout in Settings: this chat's message/
+// image count and size, plus the total across every saved chat in this
+// browser. Called whenever messages or sessions change.
+function updateDataStats() {
+  if (!dataStatsText) return;
+  const msgCount = state.messages.length;
+  let imgCount = 0;
+  state.messages.forEach(m => {
+    if (Array.isArray(m.content)) imgCount += m.content.filter(p => p.type === 'image_url').length;
+  });
+  const chatBytes = estimateBytes(state.messages);
+  const totalBytes = estimateBytes(state.sessions);
+
+  if (msgCount === 0) {
+    dataStatsText.textContent = `${state.sessions.length} saved chat${state.sessions.length === 1 ? '' : 's'} · ~${formatBytes(totalBytes)} in this browser`;
+    return;
+  }
+  const imgPart = imgCount ? `, ${imgCount} image${imgCount === 1 ? '' : 's'}` : '';
+  dataStatsText.innerHTML =
+    `This chat: ${msgCount} message${msgCount === 1 ? '' : 's'}${imgPart} · ~${formatBytes(chatBytes)}<br>` +
+    `All chats: ${state.sessions.length} saved · ~${formatBytes(totalBytes)} in this browser`;
 }
 
 function addModelDivider(text) {
@@ -1989,11 +2121,13 @@ function newChat() {
   state.messages = [];
   state.currentSessionId = null;
   state.mcpResponseId = null;
+  state.chatFullyLoaded = false;
   clearAttachments();
   messagesEl.innerHTML = '';
   if (welcome) messagesEl.appendChild(welcome);
   showWelcome(true);
   renderHistoryList();
+  updateDataStats();
   if (!inputArea.classList.contains('hidden')) userInput.focus();
 }
 
@@ -2060,6 +2194,7 @@ function saveCurrentSession() {
   state.sessions = [session, ...state.sessions.filter(s => s.id !== session.id)];
   persistSessions();
   renderHistoryList();
+  updateDataStats();
 }
 
 function loadSession(id) {
@@ -2092,10 +2227,8 @@ function loadSession(id) {
     saveSettings();
   }
 
-  messagesEl.innerHTML = '';
-  if (welcome) messagesEl.appendChild(welcome);
-  showWelcome(false);
-  state.messages.forEach(renderStoredMessage);
+  state.chatFullyLoaded = false;
+  renderCurrentMessages();
   scrollToBottom(true);
 
   // Keep the sidebar open on desktop (push mode); close it on phones
@@ -2115,6 +2248,7 @@ function deleteSession(id) {
   persistSessions();
   if (state.currentSessionId === id) newChat();
   else renderHistoryList();
+  updateDataStats();
 }
 
 function relTime(ts) {
@@ -2621,6 +2755,29 @@ function setupListeners() {
   tokensSlider.addEventListener('input', () => { tokensValue.textContent = tokensSlider.value; saveSettings(); });
   systemPrompt.addEventListener('change', saveSettings);
   streamToggle.addEventListener('change', saveSettings);
+  if (messageLoadLimitSlider) {
+    // 'input' (every drag tick) only updates the number label — re-rendering
+    // the message list on every tick would recreate the exact heaviness this
+    // setting exists to avoid. The limit itself only applies on 'change'
+    // (drag release), and only to chats opened after that.
+    messageLoadLimitSlider.addEventListener('input', () => {
+      messageLoadLimitValue.textContent = messageLoadLimitSlider.value;
+    });
+    messageLoadLimitSlider.addEventListener('change', () => {
+      state.messageLoadLimit = parseInt(messageLoadLimitSlider.value);
+      saveSettings();
+    });
+  }
+  if (stripImagesBtn) {
+    stripImagesBtn.addEventListener('click', () => {
+      const removed = stripImagesFromCurrentChat();
+      stripImagesBtn.textContent = removed > 0
+        ? `Removed ${removed} image${removed === 1 ? '' : 's'}`
+        : 'No images in this chat';
+      setTimeout(() => { stripImagesBtn.textContent = 'Remove images from this chat'; }, 2500);
+    });
+  }
+  if (clearAllChatsBtn) clearAllChatsBtn.addEventListener('click', clearAllChats);
 
   // Chat
   modelSelect.addEventListener('change', onModelChange);
