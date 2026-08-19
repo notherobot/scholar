@@ -1,13 +1,16 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.7.33';
-const APP_VERSION_DATE = '2026-08-12T06:00:00Z';
+const APP_VERSION = 'v0.7.34';
+const APP_VERSION_DATE = '2026-08-12T07:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.7.34', date: '2026-08-12T07:00:00Z', notes: [
+    'Raw LaTeX symbols some models emit (e.g. "$\\rightarrow$", "\\leq", "\\alpha") now render as their actual character (→, ≤, α) instead of literal source text',
+  ] },
   { version: 'v0.7.33', date: '2026-08-12T06:00:00Z', notes: [
     'Removed the built-in default system prompt — new devices now start with an empty one instead of the web-search instructions',
   ] },
@@ -1111,7 +1114,70 @@ function modelLoadingHTML(modelId) {
   </div>`;
 }
 
+// Scholar has no real math renderer (no KaTeX/MathJax), so raw LaTeX that
+// models emit — Gemma especially likes wrapping arrows/operators in $…$ —
+// shows up completely literally, e.g. "$\rightarrow$" instead of "→". Swap
+// the common no-argument symbol commands for their Unicode characters and
+// drop the math delimiters, so at least simple inline math reads cleanly.
+// This is a text substitution, not a real parser — full expressions
+// (fractions, matrices, integrals with bounds, etc.) are out of scope.
+const LATEX_SYMBOLS = {
+  rightarrow: '→', to: '→', longrightarrow: '⟶', implies: '⟹', Rightarrow: '⇒',
+  leftarrow: '←', gets: '←', longleftarrow: '⟵', Leftarrow: '⇐',
+  leftrightarrow: '↔', longleftrightarrow: '⟷', Leftrightarrow: '⇔', iff: '⟺',
+  uparrow: '↑', downarrow: '↓', mapsto: '↦',
+  times: '×', div: '÷', pm: '±', mp: '∓', cdot: '⋅', ast: '∗', star: '★',
+  leq: '≤', le: '≤', geq: '≥', ge: '≥', neq: '≠', ne: '≠', approx: '≈',
+  equiv: '≡', sim: '∼', simeq: '≃', cong: '≅', propto: '∝', ll: '≪', gg: '≫',
+  infty: '∞', partial: '∂', nabla: '∇', hbar: 'ℏ', ell: 'ℓ', Re: 'ℜ', Im: 'ℑ',
+  forall: '∀', exists: '∃', nexists: '∄', emptyset: '∅', varnothing: '∅',
+  in: '∈', notin: '∉', ni: '∋', subset: '⊂', subseteq: '⊆', supset: '⊃',
+  supseteq: '⊇', cup: '∪', cap: '∩', setminus: '∖', wedge: '∧', vee: '∨',
+  neg: '¬', oplus: '⊕', otimes: '⊗', perp: '⊥', parallel: '∥', angle: '∠',
+  triangle: '△', square: '□', circ: '∘', bullet: '•', degree: '°',
+  therefore: '∴', because: '∵', sum: '∑', prod: '∏', int: '∫', oint: '∮',
+  ldots: '…', cdots: '⋯', vdots: '⋮', ddots: '⋱', dagger: '†', ddagger: '‡',
+  alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ε', varepsilon: 'ε',
+  zeta: 'ζ', eta: 'η', theta: 'θ', vartheta: 'ϑ', iota: 'ι', kappa: 'κ',
+  lambda: 'λ', mu: 'μ', nu: 'ν', xi: 'ξ', omicron: 'ο', pi: 'π', varpi: 'ϖ',
+  rho: 'ρ', sigma: 'σ', varsigma: 'ς', tau: 'τ', upsilon: 'υ', phi: 'φ',
+  varphi: 'ϕ', chi: 'χ', psi: 'ψ', omega: 'ω',
+  Alpha: 'Α', Beta: 'Β', Gamma: 'Γ', Delta: 'Δ', Epsilon: 'Ε', Zeta: 'Ζ',
+  Eta: 'Η', Theta: 'Θ', Iota: 'Ι', Kappa: 'Κ', Lambda: 'Λ', Mu: 'Μ', Nu: 'Ν',
+  Xi: 'Ξ', Omicron: 'Ο', Pi: 'Π', Rho: 'Ρ', Sigma: 'Σ', Tau: 'Τ',
+  Upsilon: 'Υ', Phi: 'Φ', Chi: 'Χ', Psi: 'Ψ', Omega: 'Ω',
+};
+const LATEX_SYMBOL_RE = /\\([A-Za-z]+)/g;
+const substituteLatexSymbols = (s) => s
+  .replace(/\\text\{([^{}]*)\}/g, '$1')
+  .replace(/\\(?:mathbf|mathrm|mathit|mathcal|operatorname)\{([^{}]*)\}/g, '$1')
+  .replace(/\\sqrt\{([^{}]*)\}/g, '√($1)')
+  .replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, '($1)/($2)')
+  .replace(LATEX_SYMBOL_RE, (m, cmd) => LATEX_SYMBOLS[cmd] || m)
+  .replace(/\\,|\\;|\\ /g, ' ');
+
+// Runs the substitution above, plus drops now-redundant math delimiters
+// (\(...\), \[...\], $$...$$, and $...$ when it contains a LaTeX command —
+// bare "$" for currency is left alone). Skips fenced code blocks entirely so
+// shell/JS/etc. snippets with literal "$" or backslash escapes are untouched.
+function convertLatexSymbols(text) {
+  const parts = text.split(/(```[\s\S]*?```)/g);
+  return parts.map((part, i) => {
+    if (i % 2 === 1) return part; // fenced code block — leave verbatim
+    part = part
+      .replace(/\\\(([\s\S]*?)\\\)/g, (_, inner) => substituteLatexSymbols(inner))
+      .replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => substituteLatexSymbols(inner))
+      .replace(/\$\$([\s\S]*?)\$\$/g, (_, inner) => substituteLatexSymbols(inner))
+      .replace(/\$([^\n$]*\\[A-Za-z]+[^\n$]*)\$/g, (_, inner) => substituteLatexSymbols(inner));
+    // Catch-all: LaTeX commands emitted bare, with no $ / \( \) wrapping at
+    // all (Gemma does this too). Backslash-prefixed commands are unambiguous
+    // — never mistaken for currency — so this is safe outside delimiters too.
+    return substituteLatexSymbols(part);
+  }).join('');
+}
+
 function renderMarkdown(text) {
+  text = convertLatexSymbols(text);
   if (typeof marked !== 'undefined') {
     return marked.parse(text, { breaks: true });
   }
