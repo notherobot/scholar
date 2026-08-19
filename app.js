@@ -1,13 +1,17 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.7.30';
-const APP_VERSION_DATE = '2026-08-12T03:00:00Z';
+const APP_VERSION = 'v0.7.31';
+const APP_VERSION_DATE = '2026-08-12T04:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.7.31', date: '2026-08-12T04:00:00Z', notes: [
+    'Removed the thinking-hiding machinery entirely — messages always render exactly as the model sent them. Turn the Think toggle off in the composer if you don\'t want a model generating reasoning in the first place',
+    'Removed the now-unused "Collapse model thinking" setting',
+  ] },
   { version: 'v0.7.30', date: '2026-08-12T03:00:00Z', notes: [
     'Fixed a real performance bug: streaming re-rendered the entire message on every single token, which could bog down the tab on long replies — now throttled to ~15 updates/sec',
     'Invented tool-call syntax that some models (like Gemma) leak as raw text is now swapped for a plain notice instead of showing the garbage pseudo-JSON',
@@ -210,7 +214,6 @@ const tempValue      = $('#temp-value');
 const tokensSlider   = $('#max-tokens');
 const tokensValue    = $('#tokens-value');
 const streamToggle   = $('#stream-toggle');
-const collapseToggle = $('#collapse-toggle');
 
 const messagesEl     = $('#messages');
 const welcome        = $('#welcome');
@@ -285,7 +288,6 @@ function loadSettings() {
   tempSlider.value = s.temperature ?? 0.7;
   tokensSlider.value = s.maxTokens ?? 2048;
   streamToggle.checked = s.stream ?? true;
-  collapseToggle.checked = s.collapseThinking ?? true;
   tempValue.textContent = tempSlider.value;
   tokensValue.textContent = tokensSlider.value;
   state.mcpEnabled = s.mcpEnabled ?? false;
@@ -307,7 +309,6 @@ function saveSettings() {
     temperature: parseFloat(tempSlider.value),
     maxTokens: parseInt(tokensSlider.value),
     stream: streamToggle.checked,
-    collapseThinking: collapseToggle.checked,
     mcpEnabled: state.mcpEnabled,
     mcpServers: state.mcpServers,
     apiToken: state.apiToken,
@@ -1125,14 +1126,10 @@ function renderMarkdown(text) {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
 }
 
-// Wrap reasoning ("thinking") in a collapsed <details> dropdown, leaving the
-// answer rendered normally. Handles <think>/<thinking> tags (including a
-// still-open block mid-stream) and un-tagged "thinking out loud" output.
-// Channel-token reasoning: some chat templates (gpt-oss/Harmony-style) leak
-// special tokens like "<|channel|>thought … <|channel|>final …" into the text.
-// Pipes are sometimes half-eaten by rendering, so match loosely (<|channel> too).
-const CHANNEL_THINK_RE = /<\|?channel\|?>\s*(?:thought|thinking|analysis)[^\S\n]*(?:<\|?message\|?>)?/i;
-const CHANNEL_FINAL_RE = /(?:<\|?start\|?>\s*(?:assistant)?\s*)?<\|?channel\|?>\s*(?:final|response|answer)[^\S\n]*(?:<\|?message\|?>)?/i;
+// Strips special chat-template tokens (e.g. gpt-oss/Harmony-style
+// "<|channel|>", "<|message|>") that some models leak into plain text. Used
+// for cleaning up auto-generated chat titles, where a stray token would
+// otherwise show up in the sidebar.
 const SPECIAL_TOKEN_RE = /<\|?(?:channel|message|start|end|return|im_start|im_end|endoftext|eot_id|assistant|system|developer)\|?>/gi;
 const stripSpecialTokens = (s) => s.replace(SPECIAL_TOKEN_RE, '');
 
@@ -1141,218 +1138,15 @@ const stripSpecialTokens = (s) => s.replace(SPECIAL_TOKEN_RE, '');
 // intercepted as a real tool call — it just leaks into the reply as raw
 // pseudo-JSON, e.g. "<|toolcall>call:googlesearch:search{queries:[...]}".
 // Swap it for a plain notice instead of showing that text as if it were part
-// of the answer. Applied unconditionally, ahead of every other render path.
+// of the answer.
 const LEAKED_TOOLCALL_RE = /<\|?tool_?call\|?>\s*call:[\w.]+:[\w.]+\s*\{[\s\S]*?\}/gi;
 const stripLeakedToolcalls = (s) => s.replace(LEAKED_TOOLCALL_RE,
   '*(model attempted a tool call in a format this LM Studio setup doesn\'t recognize — nothing ran)*');
 
-// Disabled for now — the freeform/self-narration heuristics below were
-// mis-hiding real answer content on some models. Flip back to true once
-// that's sorted; until then every message renders raw, unfiltered.
-const REASONING_HIDING_ENABLED = false;
-
-function renderMessage(text, streaming) {
-  text = stripLeakedToolcalls(text);
-  if (!REASONING_HIDING_ENABLED || (collapseToggle && !collapseToggle.checked)) return renderMarkdown(text);
-
-  // Channel-token reasoning (checked first — these also often contain lists
-  // that would confuse the freeform detector)
-  const chThink = text.match(CHANNEL_THINK_RE);
-  if (chThink) {
-    const pre = text.slice(0, chThink.index);
-    const afterThink = text.slice(chThink.index + chThink[0].length);
-    const chFinal = afterThink.match(CHANNEL_FINAL_RE);
-    let html = pre.trim() ? renderMarkdown(stripSpecialTokens(pre)) : '';
-    if (chFinal) {
-      const answer = stripSpecialTokens(afterThink.slice(chFinal.index + chFinal[0].length));
-      if (answer.trim()) html += renderMarkdown(answer.trim());
-    } else {
-      // No final channel marker (yet). Try to find the answer inside.
-      const inner = stripSpecialTokens(afterThink);
-      const split = !streaming ? findAnswerBoundary(inner) : null;
-      if (split && split.answer.trim()) {
-        html += renderMarkdown(split.answer.trim());
-      }
-    }
-    return html || renderMarkdown(stripSpecialTokens(text));
-  }
-
-  // Tag-delimited reasoning (<think>…</think>)
-  if (/<think(?:ing)?>/i.test(text)) {
-    const THINK_RE = /<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/gi;
-    const parts = []; // { type: 'md', text }
-    let lastIndex = 0;
-    let m;
-    while ((m = THINK_RE.exec(text)) !== null) {
-      const before = text.slice(lastIndex, m.index);
-      if (before.trim()) parts.push({ type: 'md', text: before });
-      // Skip thinking content entirely, don't add it to parts
-      lastIndex = THINK_RE.lastIndex;
-    }
-    const rest = text.slice(lastIndex);
-    const openIdx = rest.search(/<think(?:ing)?>/i);
-    if (openIdx !== -1) {
-      const before = rest.slice(0, openIdx);
-      if (before.trim()) parts.push({ type: 'md', text: before });
-      // Skip unclosed thinking block
-    } else if (rest.trim()) {
-      parts.push({ type: 'md', text: rest });
-    }
-
-    // Render only the answer parts, skipping all thinking
-    let html = '';
-    for (const p of parts) {
-      if (p.type === 'md') html += renderMarkdown(p.text.trim());
-    }
-    return html || renderMarkdown(text);
-  }
-
-  // Un-tagged reasoning: models that "think out loud" in plain text
-  const ff = detectFreeformReasoning(text, streaming);
-  if (ff) {
-    // Only render the answer, skip the reasoning part
-    if (ff.answer.trim()) return renderMarkdown(ff.answer.trim());
-    return renderMarkdown(text);
-  }
-
-  return renderMarkdown(text);
-}
-
-// Some models emit their chain-of-thought as plain prose (no tags), opening with
-// a recognizable preamble and then producing the real answer. We only split at
-// high-confidence boundaries — guessing from prose structure proved unreliable
-// (it leaked reasoning and broke code fences), so when unsure we show raw.
-const REASON_PREAMBLE = /^(?:\s*(?:>|#{1,4})?\s*)?(?:okay[,]?\s+)?(here'?s\s+(?:a|my)\s+(?:thinking|thought|reasoning)(?:\s+process)?|(?:my\s+)?(?:thinking|thought)\s+process\b|reasoning\s*:|let'?s\s+think\b|let\s+me\s+think\b)/i;
-// A) Explicit final-answer heading/label — the answer is on the NEXT line(s).
-const ANSWER_HEADING = /^\s{0,3}(?:[-*]|\d+[.)])?\s*(?:#{1,4}\s*)?(?:\*\*)?\s*(?:final\s+response|final\s+answer|draft\s+response|my\s+(?:response|answer)|(?:response|answer|output|reply|solution)\s*:)\b[\s:.\-–—)*]*(.*)$/i;
-// B) Answer-opener phrase — the answer STARTS on this line (kept in the answer).
-const ANSWER_OPENER = /^\s{0,3}>?\s*(?:here'?s|here\s+is|below\s+is|this\s+is)\s+(?:the|my|a|an|your)\s+(?:updated|revised|final|fixed|corrected|complete|completed|new|working|refined|improved|full|cleaned[-\s]?up|reworked|modified)\b/i;
-// Markdown list/heading/quote/table starters. List markers require a trailing
-// space so bold text (**x**) and decimals (3.14) aren't mistaken for lists.
-const LISTY = /^(?:[-*]\s|>|\d+[.)]\s|#{1,6}\s|\|)/;
-// D) A block that talks about "the user" in third person, or is nothing but a
-// quoted restatement of the prompt — the tell for self-narration (see rule D
-// in findAnswerBoundary below).
-const SELF_NARRATION_CUE = /\bthe user\b|^["“][\s\S]*["”]\s*$/i;
-
-// Close a dangling ``` fence so a split doesn't leak broken markdown.
-function balanceFences(s) {
-  const fences = (s.match(/```/g) || []).length;
-  return fences % 2 ? s + '\n```' : s;
-}
-
-// Find where reasoning ends and the answer begins inside a completed blob of
-// text. Used both for un-tagged "thinking out loud" output and for <think>
-// blocks that were never closed. Returns {reasoning, answer} or null.
-function findAnswerBoundary(text) {
-  const lines = text.split('\n');
-  let headingIdx = -1, inlineAnswer = '', openerIdx = -1;
-  for (let i = 0; i < lines.length; i++) {
-    const mm = lines[i].match(ANSWER_HEADING);
-    if (mm) {
-      headingIdx = i;
-      const trail = (mm[1] || '').trim();
-      inlineAnswer = (!trail || /^[([]/.test(trail) || trail.endsWith(':')) ? '' : trail;
-    }
-    if (ANSWER_OPENER.test(lines[i])) openerIdx = i;
-  }
-
-  // Prefer whichever boundary appears later in the message.
-  if (openerIdx >= 0 && openerIdx >= headingIdx) {
-    const reasoning = lines.slice(0, openerIdx).join('\n');
-    const answer = lines.slice(openerIdx).join('\n'); // opener line is part of the answer
-    if (answer.trim()) return { reasoning, answer };
-  }
-  if (headingIdx >= 0) {
-    const reasoning = lines.slice(0, headingIdx).join('\n');
-    const after = lines.slice(headingIdx + 1).join('\n');
-    const answer = (inlineAnswer ? inlineAnswer + '\n' : '') + after;
-    if (answer.trim()) return { reasoning, answer };
-  }
-
-  // C) Glued seam: a sentence end jammed directly against the start of a new
-  // sentence with no space ("…irrational number.The square root…",
-  // "…(January 2025).The CEO…"). That's the telltale of a template/parser
-  // concatenating reasoning and answer as separate generations. The sentence
-  // may end after letters, digits, closing brackets/quotes, or a percent
-  // sign, and the answer may start with a capitalized word, "I", or bold
-  // text. Split at the last such seam outside code fences.
-  const GLUE_RE = /(?:[a-z]{2}|\d|[)\]"”'’%])[.!?](?=[A-Z][a-z]|I\b)|(?:[a-z]{2}|\d|[)\]"”'’%])[.!?:](?=\*\*[A-Za-z0-9])/g;
-  let glueEnd = -1;
-  let g;
-  while ((g = GLUE_RE.exec(text)) !== null) {
-    const fences = (text.slice(0, g.index).match(/```/g) || []).length;
-    if (fences % 2 === 0) glueEnd = g.index + g[0].length; // ignore seams inside code
-  }
-  if (glueEnd > 0) {
-    const answer = text.slice(glueEnd);
-    if (answer.trim().length >= 8) return { reasoning: text.slice(0, glueEnd), answer };
-  }
-
-  const blocks = text.split(/\n\s*\n/);
-
-  // D) Self-referential narration ("the user is asking…", a quoted restatement
-  // of the prompt) leading directly into a list is the model planning its
-  // answer out loud before writing it (common on models with no real reasoning
-  // channel, like Gemma). Narrow on purpose: a short intro line before a list
-  // is completely normal ("Here are the options:"), so this only fires when a
-  // leading block explicitly references the user or quotes the request.
-  let listIdx = -1;
-  for (let i = 0; i < blocks.length; i++) {
-    if (LISTY.test(blocks[i].trim().split('\n')[0] || '')) { listIdx = i; break; }
-  }
-  if (listIdx >= 1 && listIdx <= 3) {
-    const lead = blocks.slice(0, listIdx);
-    const allShort = lead.every(b => b.trim().split(/\s+/).length <= 25);
-    const hasCue = lead.some(b => SELF_NARRATION_CUE.test(b.trim()));
-    if (allShort && hasCue) {
-      const answer = blocks.slice(listIdx).join('\n\n');
-      if (answer.trim()) return { reasoning: lead.join('\n\n'), answer };
-    }
-  }
-
-  // Narrow, safe structural rule: a single plain-prose block that directly
-  // follows a block of reasoning steps (a list) is the answer. This only fires
-  // for the clean "steps → answer" shape, never when prose meta precedes it.
-  let end = blocks.length - 1;
-  while (end >= 0 && !blocks[end].trim()) end--;
-  if (end >= 1) {
-    const last = blocks[end].trim();
-    const lastFirst = (last.split('\n')[0] || '').trim();
-    const prevFirst = (blocks[end - 1].trim().split('\n')[0] || '').trim();
-    const lastIsProse = !LISTY.test(lastFirst) && !lastFirst.startsWith('```');
-    if (lastIsProse && LISTY.test(prevFirst) && last.length >= 2) {
-      return { reasoning: blocks.slice(0, end).join('\n\n'), answer: last };
-    }
-  }
-
-  return null;
-}
-
-function detectFreeformReasoning(text, streaming) {
-  // Structural rules inside findAnswerBoundary carry their own precision
-  // guards, so they run unconditionally (matching how the <think>-tag and
-  // channel-token paths already call it). REASON_PREAMBLE is only used below,
-  // to decide whether to collapse into a "Thinking…" placeholder while no
-  // boundary has appeared yet — without it, plenty of normal answers would
-  // flash that placeholder before settling.
-  const found = findAnswerBoundary(text);
-  if (found) return found;
-
-  if (streaming && REASON_PREAMBLE.test(text)) {
-    // Still streaming: keep it collapsed as "Thinking…" until the boundary arrives.
-    return { reasoning: text, answer: '', streaming: true };
-  }
-
-  // No confident boundary — don't collapse (never hide or mangle the answer).
-  return null;
-}
-
-function thinkBlock(inner, streaming, open) {
-  const trimmed = balanceFences(inner.trim());
-  const body = trimmed ? renderMarkdown(trimmed) : '<em>Thinking…</em>';
-  const label = streaming ? 'Thinking…' : 'Thought process';
-  return `<details class="think-block"${open ? ' open' : ''}><summary>${label}</summary><div class="think-content">${body}</div></details>`;
+// Model thinking/reasoning is never hidden — turn the Think toggle off in the
+// composer if you don't want a model to generate it in the first place.
+function renderMessage(text) {
+  return renderMarkdown(stripLeakedToolcalls(text));
 }
 
 // === Syntax highlighting (dependency-free) ===
@@ -1573,11 +1367,10 @@ async function generateReply() {
   const slowTimer = setTimeout(() => { if (!firstTokenAt) body.appendChild(slowNote); }, 10000);
   const clearSlow = () => { clearTimeout(slowTimer); slowNote.remove(); };
 
-  // Combine separate reasoning (LM Studio's reasoning_content) with the answer
-  // so renderMessage can wrap it as a collapsible block. Inline <think> tags
-  // already live inside fullContent and are handled there.
+  // Combine separate reasoning (LM Studio's reasoning_content) with the
+  // answer — nothing is hidden, so this just concatenates them for display.
   const withReasoning = () =>
-    reasoning ? `<think>${reasoning}</think>${fullContent}` : fullContent;
+    reasoning ? `${reasoning}\n\n${fullContent}` : fullContent;
 
   // Live list of MCP tool calls for this reply, rendered above the text.
   //
@@ -1813,7 +1606,7 @@ async function generateReply() {
               deltaCount++;
               if (now - lastRenderAt >= RENDER_INTERVAL_MS) {
                 lastRenderAt = now;
-                bubble.innerHTML = renderMessage(withReasoning(), true);
+                bubble.innerHTML = renderMessage(withReasoning());
                 addCopyButtons(bubble);
                 scrollToBottom();
               }
@@ -1825,9 +1618,7 @@ async function generateReply() {
         }
       }
 
-      // Final render (streaming=false) so un-tagged reasoning gets split from
-      // the answer now that the whole message has arrived.
-      bubble.innerHTML = renderMessage(withReasoning(), false);
+      bubble.innerHTML = renderMessage(withReasoning());
       addCopyButtons(bubble);
       scrollToBottom();
     } else if (useMcp) {
@@ -2733,7 +2524,6 @@ function setupListeners() {
   tokensSlider.addEventListener('input', () => { tokensValue.textContent = tokensSlider.value; saveSettings(); });
   systemPrompt.addEventListener('change', saveSettings);
   streamToggle.addEventListener('change', saveSettings);
-  collapseToggle.addEventListener('change', saveSettings);
 
   // Chat
   modelSelect.addEventListener('change', onModelChange);
