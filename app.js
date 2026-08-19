@@ -1,13 +1,16 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.7.32';
-const APP_VERSION_DATE = '2026-08-12T05:00:00Z';
+const APP_VERSION = 'v0.7.33';
+const APP_VERSION_DATE = '2026-08-12T06:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.7.33', date: '2026-08-12T06:00:00Z', notes: [
+    'Removed the built-in default system prompt — new devices now start with an empty one instead of the web-search instructions',
+  ] },
   { version: 'v0.7.32', date: '2026-08-12T05:00:00Z', notes: [
     'Fixed the Chats and Settings panels popping open instead of sliding — a generic display:none rule was overriding their slide transition',
     'Both panels are wider on mobile (90vw, up from ~82vw)',
@@ -117,26 +120,10 @@ const CHANGELOG = [
   ] },
 ];
 
-// Built-in defaults for a device that has never saved settings, so a fresh
-// install of Scholar starts wired for web search without retyping this on
-// every device. Both stay fully editable in Settings — these are only the
-// starting values, not enforced ones. See loadSettings.
-const DEFAULT_SYSTEM_PROMPT = `You have two tools: a web search tool and a Visit Website tool. Use them for
-anything time-sensitive, factual, or you're not certain of — don't answer
-from memory alone in those cases.
-
-1. Call search first with a specific, focused query.
-2. If the search results answer the question, stop and answer. Cite the
-   URL you used.
-3. Only call Visit Website when the search results don't have enough
-   detail — and only on one result, once. Don't revisit the same URL.
-4. If the first search doesn't have what you need, rephrase the query
-   once. If it still doesn't, say what you found and that you couldn't
-   confirm the rest — don't keep repeating the same search.
-5. Only use image search if the user asks for images.
-6. Only use View Images if the user explicitly asks to see an image.
-
-Never call the same tool with the same input twice.`;
+// Built-in default for a device that has never saved settings. Stays fully
+// editable in Settings — this is only the starting value, not enforced.
+// See loadSettings.
+const DEFAULT_SYSTEM_PROMPT = '';
 const DEFAULT_MCP_SERVERS = 'danielsig/duckduckgo, danielsig/visit-website';
 
 // === State ===
