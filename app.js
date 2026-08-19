@@ -1,13 +1,18 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.7.31';
-const APP_VERSION_DATE = '2026-08-12T04:00:00Z';
+const APP_VERSION = 'v0.7.32';
+const APP_VERSION_DATE = '2026-08-12T05:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.7.32', date: '2026-08-12T05:00:00Z', notes: [
+    'Fixed the Chats and Settings panels popping open instead of sliding — a generic display:none rule was overriding their slide transition',
+    'Both panels are wider on mobile (90vw, up from ~82vw)',
+    'Swipe from the left edge to open Chats, on iOS home-screen installs only (regular Safari keeps that gesture for back-navigation)',
+  ] },
   { version: 'v0.7.31', date: '2026-08-12T04:00:00Z', notes: [
     'Removed the thinking-hiding machinery entirely — messages always render exactly as the model sent them. Turn the Think toggle off in the composer if you don\'t want a model generating reasoning in the first place',
     'Removed the now-unused "Collapse model thinking" setting',
@@ -2223,6 +2228,45 @@ function toggleHistory() {
   else closeHistory();
 }
 
+// Swipe-from-left-edge to open the Chats panel. Restricted to iOS installed
+// web apps (Add to Home Screen, standalone display mode) — `navigator.standalone`
+// is only ever `true` there. In an ordinary browser tab (iOS Safari included)
+// a left-edge swipe is the "back" gesture; hijacking it there would fight the
+// browser's own navigation, so this stays off everywhere else.
+function setupEdgeSwipe() {
+  if (window.navigator.standalone !== true) return;
+
+  const EDGE_ZONE_PX = 24;   // swipe must start within this many px of the left edge
+  const TRIGGER_PX = 60;     // horizontal drag distance needed to open the panel
+  let startX = null, startY = null, tracking = false;
+
+  document.addEventListener('touchstart', (e) => {
+    if (!historyPanel.classList.contains('hidden')) return; // already open
+    const t = e.touches[0];
+    if (t.clientX > EDGE_ZONE_PX) return;
+    startX = t.clientX;
+    startY = t.clientY;
+    tracking = true;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    if (!tracking) return;
+    const t = e.touches[0];
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    if (dx >= TRIGGER_PX && dx > Math.abs(dy) * 1.5) {
+      tracking = false;
+      openHistory();
+    } else if (Math.abs(dy) > TRIGGER_PX) {
+      tracking = false; // vertical scroll — not a panel swipe
+    }
+  }, { passive: true });
+
+  const stopTracking = () => { tracking = false; };
+  document.addEventListener('touchend', stopTracking, { passive: true });
+  document.addEventListener('touchcancel', stopTracking, { passive: true });
+}
+
 // === Sidebar ===
 function openSidebar() {
   sidebar.classList.remove('hidden');
@@ -2576,6 +2620,7 @@ function setupListeners() {
   historyOverlay.addEventListener('click', closeHistory);
   historyNew.addEventListener('click', () => { newChat(); if (window.innerWidth < 768) closeHistory(); });
   historySearch.addEventListener('input', renderHistoryList);
+  setupEdgeSwipe();
 
   // Version dropdown (desktop only)
   if (versionBtn) {

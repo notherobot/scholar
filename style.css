@@ -603,10 +603,19 @@ header::before {
   display: flex;
   flex-direction: column;
   transform: translateX(0);
-  transition: transform 0.2s ease;
+  transition: transform 0.05s ease;
+}
+
+/* Wider on mobile — matches #history-panel. */
+@media (max-width: 600px) {
+  #sidebar { width: 90vw; max-width: 90vw; }
 }
 
 #sidebar.hidden {
+  /* Override the generic .hidden{display:none!important} below — a panel
+     transitioning FROM display:none can't animate, it just pops in place.
+     Stay rendered off-screen instead so the transform actually slides. */
+  display: flex !important;
   transform: translateX(100%);
   pointer-events: none;
 }
@@ -1547,10 +1556,17 @@ pre:has(.preview-btn) .copy-btn { right: 72px; }
   display: flex;
   flex-direction: column;
   transform: translateX(0);
-  transition: transform 0.2s ease;
+  transition: transform 0.05s ease;
+}
+
+/* Wider on mobile — 82vw of a phone screen felt cramped for chat titles. */
+@media (max-width: 600px) {
+  #history-panel { width: 90vw; max-width: 90vw; }
 }
 
 #history-panel.hidden {
+  /* Same override as #sidebar.hidden — see comment there. */
+  display: flex !important;
   transform: translateX(-100%);
   pointer-events: none;
 }
@@ -1558,7 +1574,7 @@ pre:has(.preview-btn) .copy-btn { right: 72px; }
 /* On wide screens the panel pushes the content over (like Claude) instead of
    overlaying it with a scrim. On narrow screens it slides over with the overlay. */
 #app {
-  transition: padding-left 0.2s ease;
+  transition: padding-left 0.05s ease;
 }
 
 @media (min-width: 768px) {
