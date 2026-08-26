@@ -320,18 +320,27 @@ header::before {
   gap: 8px;
 }
 
+/* True center of the header bar regardless of how wide header-left/right
+   are — anchored to <header> (already position:relative), not flexed
+   alongside its siblings, so an uneven left/right doesn't pull it off
+   center the way `justify-content: space-between` with a middle flex child
+   would. */
 .app-title {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   font-size: 1rem;
   font-weight: 700;
   color: var(--text-primary);
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
   letter-spacing: 0.01em;
   white-space: nowrap;
-  flex-shrink: 0;
+  pointer-events: none;
 }
 
 /* Same threshold the version dropdown already hides at — past this point
-   there isn't room for both the title and a useful model picker. */
+   there isn't room for both the title and the header's other controls. */
 @media (max-width: 400px) {
   .app-title { display: none; }
 }
@@ -1263,13 +1272,17 @@ pre:has(.preview-btn) .copy-btn { right: 72px; }
 
 .send-button, .stop-button {
   position: relative;
-  width: 34px;
-  height: 34px;
+  height: 36px;
+  padding: 0 18px;
   border: 1px solid transparent;
   border-radius: 999px;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 0.88rem;
+  font-weight: 700;
+  font-family: inherit;
+  white-space: nowrap;
   cursor: pointer;
   flex-shrink: 0;
   overflow: hidden;
@@ -1339,14 +1352,31 @@ pre:has(.preview-btn) .copy-btn { right: 72px; }
   gap: 6px;
 }
 
+/* Three columns so the middle group sits centered *between* the attach icon
+   and the send/stop button specifically — not centered in the row as a
+   whole, which would drift off if those two edge groups differ in width
+   (they do: Send/Stop went from a fixed circular icon to a wider text pill). */
 .composer-controls {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 6px;
   padding: 0 8px;
 }
 
-.composer-controls-spacer { flex: 1; }
+.composer-status-group {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.composer-send-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 
 /* Bare attach icon — no button chrome, sits at the left of the tool row */
 .attach-icon {
