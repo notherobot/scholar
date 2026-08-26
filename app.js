@@ -1,13 +1,17 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.8.0';
-const APP_VERSION_DATE = '2026-08-26T12:00:00Z';
+const APP_VERSION = 'v0.8.1';
+const APP_VERSION_DATE = '2026-08-26T18:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.8.1', date: '2026-08-26T18:00:00Z', notes: [
+    'Settings and Chats panels are wider by default, and can be dragged wider (or narrower) from their inner edge — the size sticks across reloads',
+    'Chats can be organized into folders: create one from the Chats panel, drag a chat onto it or use its new folder icon to move it, rename or delete folders anytime. Deleting a folder keeps its chats — they just become ungrouped again',
+  ] },
   { version: 'v0.8.0', date: '2026-08-26T12:00:00Z', notes: [
     'Found and fixed the real cause of the freezing tab: the markdown renderer could enter an infinite loop. A line that matched none of its block rules but was also excluded from paragraphs — a bare "# ", "--- x", "***text" — left its cursor parked and spun forever. Streaming produces half-finished lines constantly, so this fired mid-reply and hung the page for good. It was never a speed problem, which is why throttling never fixed it',
     'Markdown rendering rewritten from scratch with guaranteed forward progress and no backtracking-prone patterns, so no model output can stall it',
@@ -166,6 +170,8 @@ const state = {
   lastLoadedModel: null,  // model that last actually produced output — drives the loading bar
   attachments: [],       // pending uploads: { kind:'image'|'file', name, size, url?, text? }
   sessions: [],          // saved chat sessions
+  folders: [],           // chat folders: { id, name, collapsed }; a session
+                          // opts into one via session.folderId
   currentSessionId: null,
   stickToBottom: true,   // auto-scroll only while the user is at the bottom
   // LM Studio API token, sent as `Authorization: Bearer` on every request.
@@ -239,9 +245,12 @@ const historyPanel   = $('#history-panel');
 const historyOverlay = $('#history-overlay');
 const historyClose   = $('#history-close');
 const historyNew     = $('#history-new');
+const historyNewFolder = $('#history-new-folder');
 const historyList    = $('#history-list');
 const historyEmpty   = $('#history-empty');
 const historySearch  = $('#history-search');
+const sidebarResizeHandle  = $('#sidebar-resize-handle');
+const historyResizeHandle  = $('#history-resize-handle');
 const scrollPill     = $('#scroll-pill');
 
 const versionBtn     = $('#version-btn');
@@ -267,7 +276,10 @@ function init() {
   renderChangelog();
   loadSettings();
   loadSessions();
+  loadFolders();
   setupListeners();
+  setupPanelResize(sidebar, sidebarResizeHandle, '--sidebar-width', 'lmstudio-sidebar-width', 'right');
+  setupPanelResize(historyPanel, historyResizeHandle, '--history-width', 'lmstudio-history-width', 'left');
   updateDataStats();
 
   // If we have a saved URL, skip setup and connect
@@ -2054,6 +2066,93 @@ function deleteSession(id) {
   updateDataStats();
 }
 
+// === Chat folders ===
+const FOLDERS_KEY = 'lmstudio-chat-folders';
+
+function loadFolders() {
+  try {
+    state.folders = JSON.parse(localStorage.getItem(FOLDERS_KEY)) || [];
+  } catch (e) {
+    state.folders = [];
+  }
+}
+
+function persistFolders() {
+  try {
+    localStorage.setItem(FOLDERS_KEY, JSON.stringify(state.folders));
+  } catch (e) { /* quota — folders are tiny, nothing sensible to trim */ }
+}
+
+// Creates a folder and drops it straight into rename mode (via the caller,
+// which re-renders and finds the fresh title node) rather than prompting for
+// a name up front — matches how a new chat starts untitled too.
+function createFolder() {
+  const folder = { id: 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), name: 'New folder', collapsed: false };
+  state.folders.unshift(folder);
+  persistFolders();
+  renderHistoryList();
+  const nameEl = historyList.querySelector(`.history-folder[data-id="${folder.id}"] .history-folder-name`);
+  if (nameEl) startRenameFolder(folder, nameEl);
+}
+
+function startRenameFolder(folder, nameEl) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = folder.name || '';
+  nameEl.textContent = '';
+  nameEl.appendChild(input);
+  input.focus();
+  input.select();
+
+  let done = false;
+  const commit = (save) => {
+    if (done) return;
+    done = true;
+    const v = input.value.trim();
+    if (save && v) {
+      folder.name = v.slice(0, 60);
+      persistFolders();
+    }
+    // Must happen before renderHistoryList — that function refuses to rebuild
+    // while a rename input is still focused, to avoid destroying it mid-edit.
+    // Leaving it in place after commit would make the rebuild never happen.
+    input.remove();
+    renderHistoryList();
+  };
+  input.addEventListener('click', e => e.stopPropagation());
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') commit(true);
+    else if (e.key === 'Escape') commit(false);
+  });
+  input.addEventListener('blur', () => commit(true));
+}
+
+// Deleting a folder never deletes its chats — they just fall back to being
+// ungrouped, the same place a chat starts out.
+function deleteFolder(id) {
+  state.folders = state.folders.filter(f => f.id !== id);
+  state.sessions.forEach(s => { if (s.folderId === id) s.folderId = null; });
+  persistFolders();
+  persistSessions();
+  renderHistoryList();
+}
+
+function toggleFolderCollapsed(id) {
+  const f = state.folders.find(x => x.id === id);
+  if (!f) return;
+  f.collapsed = !f.collapsed;
+  persistFolders();
+  renderHistoryList();
+}
+
+function moveSessionToFolder(sessionId, folderId) {
+  const s = state.sessions.find(x => x.id === sessionId);
+  if (!s) return;
+  s.folderId = folderId || null;
+  persistSessions();
+  renderHistoryList();
+}
+
 function relTime(ts) {
   if (!ts) return '';
   const m = Math.floor((Date.now() - ts) / 60000);
@@ -2108,6 +2207,8 @@ function startRename(session, titleEl) {
 }
 
 // Bucket sessions Claude-style: Pinned, Today, Yesterday, Previous 7 days, Older.
+// Buckets ungrouped (unpinned, folderless) sessions Claude-style: Today,
+// Yesterday, Previous 7 days, Older.
 function groupSessions(sessions) {
   const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
   const dayMs = 86400000;
@@ -2115,89 +2216,218 @@ function groupSessions(sessions) {
   const weekAgo = startOfToday.getTime() - 7 * dayMs;
 
   const groups = [
-    { label: 'Pinned', items: [] },
     { label: 'Today', items: [] },
     { label: 'Yesterday', items: [] },
     { label: 'Previous 7 days', items: [] },
     { label: 'Older', items: [] },
   ];
   sessions.forEach(s => {
-    if (s.pinned) return groups[0].items.push(s);
     const t = s.updatedAt || s.createdAt || 0;
-    if (t >= startOfToday.getTime()) groups[1].items.push(s);
-    else if (t >= yesterday) groups[2].items.push(s);
-    else if (t >= weekAgo) groups[3].items.push(s);
-    else groups[4].items.push(s);
+    if (t >= startOfToday.getTime()) groups[0].items.push(s);
+    else if (t >= yesterday) groups[1].items.push(s);
+    else if (t >= weekAgo) groups[2].items.push(s);
+    else groups[3].items.push(s);
   });
   return groups.filter(g => g.items.length);
+}
+
+const FOLDER_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6z"/></svg>';
+const CHEVRON_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>';
+
+// Closes any open move-to-folder popover. Exported at module scope (rather
+// than nested in renderHistoryList) so a document-level click listener can
+// close a menu when the click lands anywhere outside it.
+function closeMoveMenus() {
+  historyList.querySelectorAll('.history-move-menu').forEach(m => m.classList.add('hidden'));
+}
+document.addEventListener('click', closeMoveMenus);
+
+// Builds one chat row. Shared by every section (pinned, per-folder, and the
+// date buckets) so behavior — rename, pin, move, delete, drag source — stays
+// identical no matter where the chat currently lives.
+function buildHistoryItem(session) {
+  const li = document.createElement('li');
+  li.className = 'history-item' + (session.id === state.currentSessionId ? ' active' : '');
+  li.dataset.id = session.id;
+  li.draggable = true;
+  li.addEventListener('dragstart', e => {
+    e.dataTransfer.setData('text/plain', session.id);
+    e.dataTransfer.effectAllowed = 'move';
+    li.classList.add('dragging');
+  });
+  li.addEventListener('dragend', () => li.classList.remove('dragging'));
+
+  const main = document.createElement('div');
+  main.className = 'history-item-main';
+  const title = document.createElement('div');
+  title.className = 'history-item-title';
+  title.textContent = session.title || 'New chat';
+  title.title = 'Double-click to rename';
+  title.addEventListener('dblclick', e => { e.stopPropagation(); startRename(session, title); });
+  const time = document.createElement('div');
+  time.className = 'history-item-time';
+  time.textContent = relTime(session.updatedAt);
+  main.appendChild(title);
+  main.appendChild(time);
+  main.addEventListener('click', () => loadSession(session.id));
+
+  const pin = document.createElement('button');
+  pin.className = 'history-pin' + (session.pinned ? ' pinned' : '');
+  pin.setAttribute('aria-label', session.pinned ? 'Unpin chat' : 'Pin chat');
+  pin.innerHTML = PIN_SVG(!!session.pinned);
+  pin.addEventListener('click', e => { e.stopPropagation(); togglePin(session.id); });
+
+  const move = document.createElement('div');
+  move.className = 'history-move';
+  const moveBtn = document.createElement('button');
+  moveBtn.className = 'history-move-btn';
+  moveBtn.setAttribute('aria-label', 'Move to folder');
+  moveBtn.title = 'Move to folder';
+  moveBtn.innerHTML = FOLDER_SVG;
+  const menu = document.createElement('div');
+  menu.className = 'history-move-menu hidden';
+  const noneItem = document.createElement('button');
+  noneItem.type = 'button';
+  noneItem.className = 'history-move-item' + (!session.folderId ? ' current' : '');
+  noneItem.textContent = 'No folder';
+  noneItem.addEventListener('click', e => { e.stopPropagation(); closeMoveMenus(); moveSessionToFolder(session.id, null); });
+  menu.appendChild(noneItem);
+  state.folders.forEach(f => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'history-move-item' + (session.folderId === f.id ? ' current' : '');
+    item.textContent = f.name;
+    item.addEventListener('click', e => { e.stopPropagation(); closeMoveMenus(); moveSessionToFolder(session.id, f.id); });
+    menu.appendChild(item);
+  });
+  moveBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    const willOpen = menu.classList.contains('hidden');
+    closeMoveMenus();
+    if (willOpen) menu.classList.remove('hidden');
+  });
+  move.appendChild(moveBtn);
+  move.appendChild(menu);
+
+  const del = document.createElement('button');
+  del.className = 'history-delete';
+  del.setAttribute('aria-label', 'Delete chat');
+  del.innerHTML = TRASH_SVG;
+  del.addEventListener('click', e => { e.stopPropagation(); deleteSession(session.id); });
+
+  li.appendChild(main);
+  li.appendChild(pin);
+  li.appendChild(move);
+  li.appendChild(del);
+  return li;
+}
+
+function appendHistoryGroup(label, sessions) {
+  const header = document.createElement('li');
+  header.className = 'history-group';
+  header.textContent = label;
+  historyList.appendChild(header);
+  sessions.forEach(s => historyList.appendChild(buildHistoryItem(s)));
+}
+
+function appendFolderSection(folder, sessions, searching) {
+  const section = document.createElement('li');
+  section.className = 'history-folder-section';
+
+  const header = document.createElement('div');
+  header.className = 'history-folder' + (folder.collapsed && !searching ? ' collapsed' : '');
+  header.dataset.id = folder.id;
+
+  const chevron = document.createElement('span');
+  chevron.className = 'history-folder-chevron';
+  chevron.innerHTML = CHEVRON_SVG;
+  const icon = document.createElement('span');
+  icon.className = 'history-folder-icon';
+  icon.innerHTML = FOLDER_SVG;
+  const name = document.createElement('span');
+  name.className = 'history-folder-name';
+  name.textContent = folder.name;
+  name.title = 'Double-click to rename';
+  name.addEventListener('dblclick', e => { e.stopPropagation(); startRenameFolder(folder, name); });
+  const count = document.createElement('span');
+  count.className = 'history-folder-count';
+  count.textContent = sessions.length || '';
+  const del = document.createElement('button');
+  del.className = 'history-folder-delete';
+  del.setAttribute('aria-label', 'Delete folder');
+  del.title = 'Delete folder (keeps its chats)';
+  del.innerHTML = TRASH_SVG;
+  del.addEventListener('click', e => { e.stopPropagation(); deleteFolder(folder.id); });
+
+  header.appendChild(chevron);
+  header.appendChild(icon);
+  header.appendChild(name);
+  header.appendChild(count);
+  header.appendChild(del);
+  header.addEventListener('click', () => toggleFolderCollapsed(folder.id));
+
+  // Drop target for dragging a chat row in from anywhere in the list.
+  header.addEventListener('dragover', e => { e.preventDefault(); header.classList.add('drag-over'); });
+  header.addEventListener('dragleave', () => header.classList.remove('drag-over'));
+  header.addEventListener('drop', e => {
+    e.preventDefault();
+    header.classList.remove('drag-over');
+    const id = e.dataTransfer.getData('text/plain');
+    if (id) moveSessionToFolder(id, folder.id);
+  });
+
+  const list = document.createElement('ul');
+  list.className = 'history-folder-items' + (folder.collapsed && !searching ? ' hidden' : '');
+  sessions.forEach(s => list.appendChild(buildHistoryItem(s)));
+
+  section.appendChild(header);
+  section.appendChild(list);
+  historyList.appendChild(section);
 }
 
 function renderHistoryList() {
   if (!historyList) return;
   // Don't rebuild while a rename is in progress — it would destroy the input
-  const renaming = historyList.querySelector('.history-item-title input');
-  if (renaming && document.activeElement === renaming) return;
+  const renamingChat = historyList.querySelector('.history-item-title input');
+  const renamingFolder = historyList.querySelector('.history-folder-name input');
+  if ((renamingChat || renamingFolder) && document.activeElement &&
+      (renamingChat === document.activeElement || renamingFolder === document.activeElement)) return;
   historyList.innerHTML = '';
 
   const q = (historySearch?.value || '').trim().toLowerCase();
+  const searching = !!q;
   let sessions = state.sessions;
-  if (q) {
+  if (searching) {
     sessions = sessions.filter(s =>
       (s.title || '').toLowerCase().includes(q) ||
       (s.messages || []).some(m => extractText(m.content).toLowerCase().includes(q))
     );
   }
 
-  if (!sessions.length) {
-    historyEmpty.textContent = q ? 'No matching chats.' : 'No saved chats yet.';
+  const validFolderIds = new Set(state.folders.map(f => f.id));
+  const pinned = sessions.filter(s => s.pinned);
+  const unpinned = sessions.filter(s => !s.pinned);
+  const folderless = unpinned.filter(s => !s.folderId || !validFolderIds.has(s.folderId));
+
+  const hasAnything = pinned.length || unpinned.length || state.folders.length;
+  if (!hasAnything) {
+    historyEmpty.textContent = searching ? 'No matching chats.' : 'No saved chats yet.';
     historyEmpty.classList.remove('hidden');
     return;
   }
   historyEmpty.classList.add('hidden');
 
-  groupSessions(sessions).forEach(group => {
-    const header = document.createElement('li');
-    header.className = 'history-group';
-    header.textContent = group.label;
-    historyList.appendChild(header);
+  if (pinned.length) appendHistoryGroup('Pinned', pinned);
 
-    group.items.forEach(session => {
-      const li = document.createElement('li');
-      li.className = 'history-item' + (session.id === state.currentSessionId ? ' active' : '');
-      li.dataset.id = session.id;
-
-      const main = document.createElement('div');
-      main.className = 'history-item-main';
-      const title = document.createElement('div');
-      title.className = 'history-item-title';
-      title.textContent = session.title || 'New chat';
-      title.title = 'Double-click to rename';
-      title.addEventListener('dblclick', e => { e.stopPropagation(); startRename(session, title); });
-      const time = document.createElement('div');
-      time.className = 'history-item-time';
-      time.textContent = relTime(session.updatedAt);
-      main.appendChild(title);
-      main.appendChild(time);
-      main.addEventListener('click', () => loadSession(session.id));
-
-      const pin = document.createElement('button');
-      pin.className = 'history-pin' + (session.pinned ? ' pinned' : '');
-      pin.setAttribute('aria-label', session.pinned ? 'Unpin chat' : 'Pin chat');
-      pin.innerHTML = PIN_SVG(!!session.pinned);
-      pin.addEventListener('click', e => { e.stopPropagation(); togglePin(session.id); });
-
-      const del = document.createElement('button');
-      del.className = 'history-delete';
-      del.setAttribute('aria-label', 'Delete chat');
-      del.innerHTML = TRASH_SVG;
-      del.addEventListener('click', e => { e.stopPropagation(); deleteSession(session.id); });
-
-      li.appendChild(main);
-      li.appendChild(pin);
-      li.appendChild(del);
-      historyList.appendChild(li);
-    });
+  state.folders.forEach(folder => {
+    const items = unpinned.filter(s => s.folderId === folder.id);
+    // While searching, an empty folder is just noise — skip it. Otherwise
+    // folders always show (even empty) so there's somewhere to drag a chat.
+    if (searching && !items.length) return;
+    appendFolderSection(folder, items, searching);
   });
+
+  groupSessions(folderless).forEach(group => appendHistoryGroup(group.label, group.items));
 }
 
 function openHistory() {
@@ -2335,6 +2565,63 @@ function openSidebar() {
 function closeSidebar() {
   sidebar.classList.add('hidden');
   sidebarOverlay.classList.add('hidden');
+}
+
+// Lets the Settings and Chats panels be dragged wider/narrower from their
+// inner edge. The width lives in a CSS custom property on :root (so both the
+// panel's own `width` and, for the history panel, #app's push-over
+// padding-left stay in sync automatically — see the `var(--history-width)`
+// rules in style.css) and is persisted so it survives a reload.
+//
+// `anchor` says which edge of the panel is fixed in place: 'right' for the
+// sidebar (it hugs the right edge of the screen, so dragging its left edge
+// changes width as screenWidth - pointerX), 'left' for the history panel
+// (dragging its right edge changes width as pointerX itself).
+function setupPanelResize(panel, handle, cssVar, storageKey, anchor) {
+  if (!panel || !handle) return;
+
+  const MIN_WIDTH = 240;
+  const maxWidth = () => Math.min(640, Math.round(window.innerWidth * 0.7));
+
+  const saved = parseInt(localStorage.getItem(storageKey), 10);
+  if (saved && saved >= MIN_WIDTH) {
+    document.documentElement.style.setProperty(cssVar, saved + 'px');
+  }
+
+  let dragging = false;
+
+  const widthFor = (clientX) => {
+    const raw = anchor === 'right' ? window.innerWidth - clientX : clientX;
+    return Math.max(MIN_WIDTH, Math.min(maxWidth(), Math.round(raw)));
+  };
+
+  const onMove = (e) => {
+    if (!dragging) return;
+    const w = widthFor(e.clientX);
+    document.documentElement.style.setProperty(cssVar, w + 'px');
+  };
+
+  const onUp = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.classList.remove('resizing-panel');
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    localStorage.setItem(storageKey, String(widthFor(e.clientX)));
+  };
+
+  handle.addEventListener('pointerdown', (e) => {
+    // Only the primary button/touch starts a drag; a click-through on
+    // whatever's beneath is preserved for anything else.
+    if (e.button !== undefined && e.button !== 0) return;
+    dragging = true;
+    handle.classList.add('dragging');
+    document.body.classList.add('resizing-panel');
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    e.preventDefault();
+  });
 }
 
 // === Input ===
@@ -2669,6 +2956,7 @@ function setupListeners() {
   historyClose.addEventListener('click', closeHistory);
   historyOverlay.addEventListener('click', closeHistory);
   historyNew.addEventListener('click', () => { newChat(); if (window.innerWidth < 768) closeHistory(); });
+  if (historyNewFolder) historyNewFolder.addEventListener('click', createFolder);
   historySearch.addEventListener('input', renderHistoryList);
   setupHistoryPanelSwipe();
 

@@ -39,6 +39,13 @@
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 
+  /* Panel widths — resizable by dragging their inner edge (see
+     setupPanelResize in app.js), which overwrites these on :root and
+     persists the result. Defaults are wider than the originals (280/300)
+     since both felt cramped for chat titles and settings labels. */
+  --sidebar-width: 320px;
+  --history-width: 340px;
+
   /* Aqua / jelly-button gloss kit: candy-glossy highlight sheen, deep bevel
      edges, card shadows — turned up to peak-2002 "Web 2.0 badge" strength. */
   --gloss-hi: rgba(255, 255, 255, 0.75);
@@ -615,7 +622,7 @@ header::before {
   top: 0;
   right: 0;
   bottom: 0;
-  width: 280px;
+  width: var(--sidebar-width);
   max-width: 80vw;
   background: linear-gradient(to bottom, var(--bg-lift) 0%, var(--bg-secondary) 8%, var(--bg-secondary) 100%);
   border-left: 1px solid var(--border);
@@ -1455,7 +1462,7 @@ pre:has(.preview-btn) .copy-btn { right: 72px; }
   top: 0;
   left: 0;
   bottom: 0;
-  width: 300px;
+  width: var(--history-width);
   max-width: 82vw;
   background: linear-gradient(to bottom, var(--bg-lift) 0%, var(--bg-secondary) 8%, var(--bg-secondary) 100%);
   border-right: 1px solid var(--border);
@@ -1487,11 +1494,48 @@ pre:has(.preview-btn) .copy-btn { right: 72px; }
 
 @media (min-width: 768px) {
   #app.history-open {
-    padding-left: 300px;
+    padding-left: var(--history-width);
   }
   #app.history-open #history-overlay {
     display: none !important;
   }
+}
+
+/* === Panel resize handles ===
+   A thin invisible strip along the inner edge of each panel, widened only
+   on hover/drag so it doesn't eat into the panel's own content area. Desktop
+   only — mobile forces both panels to a vw-based width (see the max-width:
+   600px rules above/below), so there is nothing meaningful to drag there. */
+.resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  cursor: ew-resize;
+  z-index: 2;
+  touch-action: none;
+}
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+  background: transparent;
+  transition: background 0.15s;
+}
+.resize-handle:hover::after,
+.resize-handle.dragging::after {
+  background: var(--accent-dim);
+}
+.resize-handle-left { left: -5px; }
+.resize-handle-right { right: -5px; }
+
+body.resizing-panel { cursor: ew-resize; user-select: none; }
+
+@media (max-width: 600px) {
+  .resize-handle { display: none; }
 }
 
 .history-content {
@@ -1500,8 +1544,14 @@ pre:has(.preview-btn) .copy-btn { right: 72px; }
   flex: 1;
 }
 
+.history-content-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 .btn-new-chat {
-  width: 100%;
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1515,12 +1565,17 @@ pre:has(.preview-btn) .copy-btn { right: 72px; }
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
-  margin-bottom: 12px;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 1px 3px rgba(0, 0, 0, 0.3);
   transition: background 0.15s;
 }
 
 .btn-new-chat:hover { background: linear-gradient(to bottom, var(--bg-hover), var(--bg-lift)); }
+
+.history-content-actions .icon-btn {
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
 
 /* Search box */
 .history-search {
@@ -1667,6 +1722,146 @@ pre:has(.preview-btn) .copy-btn { right: 72px; }
   text-align: center;
   padding: 24px 12px;
 }
+
+/* === Folders === */
+.history-folder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 8px 6px;
+  margin-top: 4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+.history-folder:hover { background: var(--bg-hover); }
+
+.history-folder-chevron {
+  display: flex;
+  color: var(--text-muted);
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+.history-folder.collapsed .history-folder-chevron { transform: rotate(-90deg); }
+
+.history-folder-icon { color: var(--text-muted); flex-shrink: 0; display: flex; }
+
+.history-folder-name {
+  flex: 1;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-folder-count {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.history-folder-delete {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: none;
+  flex-shrink: 0;
+}
+.history-folder:hover .history-folder-delete { display: flex; }
+.history-folder-delete:hover { color: var(--danger); background: rgba(239,68,68,0.1); }
+
+.history-folder-name input {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 1px 5px;
+  outline: none;
+}
+
+/* Sessions inside an expanded folder are indented under it. */
+.history-folder-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 14px;
+}
+.history-folder-items.hidden { display: none; }
+
+/* A chat item being dragged, and a folder header currently under it. */
+.history-item.dragging { opacity: 0.4; }
+.history-folder.drag-over {
+  background: var(--bg-hover);
+  box-shadow: 0 0 0 1px var(--accent-dim) inset;
+}
+
+/* Move-to-folder button + its popover menu */
+.history-move {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.history-move-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+.history-item:hover .history-move-btn { opacity: 1; }
+.history-move-btn:hover { color: var(--accent); background: rgba(126,203,245,0.1); }
+@media (hover: none) {
+  .history-move-btn { opacity: 1; }
+}
+
+.history-move-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 160px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: linear-gradient(to bottom, var(--bg-lift), var(--bg-secondary));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  z-index: 60;
+  padding: 4px;
+}
+.history-move-menu.hidden { display: none; }
+
+.history-move-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-family: inherit;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-move-item:hover { background: var(--bg-hover); }
+.history-move-item.current { color: var(--accent); }
 
 /* === Syntax highlighting (Towers palette) === */
 .hl-kw  { color: var(--accent); }
