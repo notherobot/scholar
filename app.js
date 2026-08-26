@@ -1,13 +1,17 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.7.37';
-const APP_VERSION_DATE = '2026-08-12T10:00:00Z';
+const APP_VERSION = 'v0.7.38';
+const APP_VERSION_DATE = '2026-08-26T00:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.7.38', date: '2026-08-26T00:00:00Z', notes: [
+    'Streaming performance optimized: re-render interval increases with reply length to prevent browser slowdown on long responses',
+    'Code blocks now render plain during streaming and highlight only after generation completes',
+  ] },
   { version: 'v0.7.37', date: '2026-08-12T10:00:00Z', notes: [
     'Welcome message fades out over 100ms as soon as you start typing, instead of waiting for the message to send',
     'iOS: the Chats panel now drags open/closed 1:1 with your finger instead of popping in once a threshold is crossed — matches native side-menu behavior, including a fast-flick shortcut',
