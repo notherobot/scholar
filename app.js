@@ -1204,6 +1204,18 @@ async function generateReply() {
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      let renderScheduled = false;
+
+      const scheduleRender = () => {
+        if (renderScheduled) return;
+        renderScheduled = true;
+        requestAnimationFrame(() => {
+          bubble.innerHTML = renderMessage(withReasoning(), true);
+          addCopyButtons(bubble);
+          scrollToBottom();
+          renderScheduled = false;
+        });
+      };
 
       while (true) {
         const { done, value } = await reader.read();
@@ -1268,9 +1280,7 @@ async function generateReply() {
             if (changed) {
               if (!firstTokenAt) { firstTokenAt = performance.now(); state.lastLoadedModel = targetModel; clearSlow(); }
               deltaCount++;
-              bubble.innerHTML = renderMessage(withReasoning(), true);
-              addCopyButtons(bubble);
-              scrollToBottom();
+              scheduleRender();
             }
           } catch(e) {
             if (e instanceof SyntaxError) continue; // partial/garbage line
