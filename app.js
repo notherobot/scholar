@@ -1,13 +1,21 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.7.38';
-const APP_VERSION_DATE = '2026-08-26T00:00:00Z';
+const APP_VERSION = 'v0.8.0';
+const APP_VERSION_DATE = '2026-08-26T12:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.8.0', date: '2026-08-26T12:00:00Z', notes: [
+    'Found and fixed the real cause of the freezing tab: the markdown renderer could enter an infinite loop. A line that matched none of its block rules but was also excluded from paragraphs — a bare "# ", "--- x", "***text" — left its cursor parked and spun forever. Streaming produces half-finished lines constantly, so this fired mid-reply and hung the page for good. It was never a speed problem, which is why throttling never fixed it',
+    'Markdown rendering rewritten from scratch with guaranteed forward progress and no backtracking-prone patterns, so no model output can stall it',
+    'Streaming rebuilt to render incrementally: finished blocks are parsed once and left alone, and only the last unfinished block is re-rendered as text arrives. Cost is now proportional to reply length instead of its square',
+    'Links in replies are sanitized, and code spans no longer mangle URLs containing underscores',
+    'Removed MCP tools, the Think and Low effort toggles, and the leaked-tool-call rewriting that came with them',
+    'Regenerate added to your own messages, alongside Copy and Edit',
+  ] },
   { version: 'v0.7.38', date: '2026-08-26T00:00:00Z', notes: [
     'Fixed the API token sometimes not being sent on connect — it\'s now synced from the field right before the request instead of only on keystrokes',
   ] },
@@ -140,11 +148,9 @@ const CHANGELOG = [
   ] },
 ];
 
-// Built-in default for a device that has never saved settings. Stays fully
-// editable in Settings — this is only the starting value, not enforced.
-// See loadSettings.
+// Built-in default for a device that has never saved settings. Empty by
+// design — Scholar sends no system prompt unless one is typed in Settings.
 const DEFAULT_SYSTEM_PROMPT = '';
-const DEFAULT_MCP_SERVERS = 'danielsig/duckduckgo, danielsig/visit-website';
 
 // === State ===
 const state = {
@@ -162,29 +168,10 @@ const state = {
   sessions: [],          // saved chat sessions
   currentSessionId: null,
   stickToBottom: true,   // auto-scroll only while the user is at the bottom
-  // MCP tool use. When enabled, chats route through LM Studio's native
-  // /api/v1/chat endpoint (instead of the OpenAI-compatible one) with the
-  // configured MCP servers attached as "plugin" integrations. LM Studio runs
-  // the tool calls itself, so there's no client-side tool loop here.
-  mcpEnabled: false,
-  mcpServers: DEFAULT_MCP_SERVERS,  // comma-separated mcp.json labels and/or "owner/name" Hub plugin ids
-  // LM Studio API token. Optional in general, but *required* for MCP: LM Studio
-  // only lets API clients touch mcp.json servers when "Require Authentication"
-  // is on and the token carries Integration Access — those servers can reach
-  // the filesystem, so it gates them deliberately. Once auth is enabled every
-  // endpoint needs the token, so it's sent on all requests.
-  // Stored in this browser's localStorage only; never committed.
+  // LM Studio API token, sent as `Authorization: Bearer` on every request.
+  // Only needed when "Require Authentication" is on, but once it is, every
+  // endpoint needs it. Stored in this browser's localStorage only.
   apiToken: '',
-  // Server-side conversation id from the last /api/v1/chat response. Lets the
-  // next turn continue the same thread instead of re-sending history. Cleared
-  // whenever the conversation changes out from under it (new/loaded chat,
-  // regenerate), which falls back to sending flattened history.
-  mcpResponseId: null,
-  // Reasoning controls, sent as chat_template_kwargs.enable_thinking and
-  // reasoning_effort on every request. Models that don't support them just
-  // ignore the extra fields. See generateReply.
-  enableThinking: true,
-  lowEffort: false,
   // How many of the most recent messages get rendered into the DOM when a
   // chat is opened. Nothing is deleted — this only limits the expensive
   // part (markdown parse + syntax highlight + DOM build) that makes long
@@ -223,9 +210,6 @@ const sidebarOverlay = $('#sidebar-overlay');
 const sidebarClose   = $('#sidebar-close');
 const sidebarUrl     = $('#sidebar-url');
 const sidebarReconn  = $('#sidebar-reconnect');
-const mcpToggle      = $('#mcp-toggle');
-const mcpServersInput = $('#mcp-servers');
-const mcpStatusText  = $('#mcp-status-text');
 const apiTokenInput  = $('#api-token');
 const disconnectBtn  = $('#disconnect-btn');
 const systemPrompt   = $('#system-prompt');
@@ -249,9 +233,6 @@ const stopBtn        = $('#stop-btn');
 const attachFileBtn  = $('#attach-file-btn');
 const fileInput      = $('#file-input');
 const attachmentsEl  = $('#attachments');
-const mcpIndicator   = $('#mcp-indicator');
-const thinkingToggleBtn   = $('#thinking-toggle-btn');
-const lowEffortToggleBtn  = $('#low-effort-toggle-btn');
 
 const historyBtn     = $('#history-btn');
 const historyPanel   = $('#history-panel');
@@ -300,10 +281,9 @@ function init() {
 }
 
 // === Settings ===
-// Applies the built-in defaults (DEFAULT_SYSTEM_PROMPT, DEFAULT_MCP_SERVERS)
-// to a fresh device, then layers this device's saved settings on top —
-// `??` so an explicitly-cleared field (saved as '') stays cleared, while a
-// field that was never saved at all falls through to the default.
+// Applies the built-in default to a fresh device, then layers this device's
+// saved settings on top — `??` so an explicitly-cleared field (saved as '')
+// stays cleared, while a field that was never saved falls through.
 function loadSettings() {
   let s = {};
   const saved = localStorage.getItem('lmstudio-chat-settings');
@@ -316,20 +296,12 @@ function loadSettings() {
   streamToggle.checked = s.stream ?? true;
   tempValue.textContent = tempSlider.value;
   tokensValue.textContent = tokensSlider.value;
-  state.mcpEnabled = s.mcpEnabled ?? false;
-  state.mcpServers = s.mcpServers ?? DEFAULT_MCP_SERVERS;
   state.apiToken = s.apiToken ?? '';
-  state.enableThinking = s.enableThinking ?? true;
-  state.lowEffort = s.lowEffort ?? false;
   state.messageLoadLimit = s.messageLoadLimit ?? 50;
-  if (mcpToggle) mcpToggle.checked = state.mcpEnabled;
-  if (mcpServersInput) mcpServersInput.value = state.mcpServers;
   if (apiTokenInput) apiTokenInput.value = state.apiToken;
   if (setupToken) setupToken.value = state.apiToken;
   if (messageLoadLimitSlider) messageLoadLimitSlider.value = state.messageLoadLimit;
   if (messageLoadLimitValue) messageLoadLimitValue.textContent = state.messageLoadLimit;
-  updateMcpUI();
-  updateReasoningToggleUI();
 }
 
 function saveSettings() {
@@ -338,38 +310,14 @@ function saveSettings() {
     temperature: parseFloat(tempSlider.value),
     maxTokens: parseInt(tokensSlider.value),
     stream: streamToggle.checked,
-    mcpEnabled: state.mcpEnabled,
-    mcpServers: state.mcpServers,
     apiToken: state.apiToken,
-    enableThinking: state.enableThinking,
-    lowEffort: state.lowEffort,
     messageLoadLimit: state.messageLoadLimit,
   }));
 }
 
-// Reflects state.enableThinking / state.lowEffort on the composer's toggle
-// buttons — active styling, aria-pressed, and a hover title describing what
-// clicking it will do.
-function updateReasoningToggleUI() {
-  if (thinkingToggleBtn) {
-    thinkingToggleBtn.classList.toggle('active', state.enableThinking);
-    thinkingToggleBtn.setAttribute('aria-pressed', String(state.enableThinking));
-    thinkingToggleBtn.title = state.enableThinking
-      ? 'Model thinking: on — click to turn off'
-      : 'Model thinking: off — click to turn on';
-  }
-  if (lowEffortToggleBtn) {
-    lowEffortToggleBtn.classList.toggle('active', state.lowEffort);
-    lowEffortToggleBtn.setAttribute('aria-pressed', String(state.lowEffort));
-    lowEffortToggleBtn.title = state.lowEffort
-      ? 'Reasoning effort: low — click for normal'
-      : 'Reasoning effort: normal — click for low';
-  }
-}
-
 // LM Studio accepts `Authorization: Bearer <token>` once "Require
-// Authentication" is on — and then every endpoint needs it, not just the
-// MCP ones. Merged into all outgoing requests; a no-op when no token is set.
+// Authentication" is on — and then every endpoint needs it. Merged into all
+// outgoing requests; a no-op when no token is set.
 function authHeaders(extra) {
   const h = { ...(extra || {}) };
   if (state.apiToken) h['Authorization'] = 'Bearer ' + state.apiToken;
@@ -511,7 +459,6 @@ function showSetup() {
   state.messages = [];
   state.apiBase = '';
   state.currentSessionId = null;
-  state.mcpResponseId = null;
   state.modelCaps.vision = false;
   clearAttachments();
   closeHistory();
@@ -799,9 +746,6 @@ function onModelChange() {
   syncModelPickerLabel();
   if (!selected || selected === state.currentModel) return;
   state.currentModel = selected;
-  // Switching models invalidates the server-side MCP thread — the next turn
-  // has to re-send history rather than continue one built on the old model.
-  state.mcpResponseId = null;
   addModelDivider(`${prettyModelName(selected)} loaded`);
   refreshModelCaps();
   saveCurrentSession();
@@ -884,116 +828,6 @@ function nameSuggestsVision(modelId) {
 
 function activeModelId() {
   return modelSelect.value || '';
-}
-
-// === MCP (Model Context Protocol) ===
-// LM Studio exposes tool providers as "plugin" integrations on its native
-// /api/v1/chat endpoint. That endpoint speaks a different dialect than the
-// OpenAI-compatible one Scholar uses by default (named SSE events, `input`
-// instead of `messages`, server-side threading), so MCP chats take a separate
-// request/parse path — see generateReply.
-//
-// LM Studio executes the tool calls itself and streams the results back, so
-// there's no client-side tool-execution loop to implement here.
-
-// Parses the comma-separated integration list into `integrations` entries.
-//
-// Two kinds of plugin id exist and they live in different namespaces:
-//   - servers from LM Studio's mcp.json  -> "mcp/<server_label>"
-//   - plugins installed from the LM Studio Hub -> "<owner>/<name>"
-// A bare label is taken as an mcp.json server (the common case) and gets the
-// "mcp/" prefix; anything already carrying a "/" is passed through untouched,
-// so hub plugins like "danielsig/duckduckgo" aren't mangled into
-// "mcp/danielsig/duckduckgo", which resolves to nothing.
-//
-// "playwright, danielsig/duckduckgo"
-//   -> [{type:'plugin', id:'mcp/playwright'}, {type:'plugin', id:'danielsig/duckduckgo'}]
-function mcpIntegrations() {
-  return String(state.mcpServers || '')
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean)
-    .map(label => ({
-      type: 'plugin',
-      id: label.includes('/') ? label : 'mcp/' + label,
-    }));
-}
-
-// MCP is only actually in play when it's switched on AND at least one server
-// is named — otherwise fall back to the plain OpenAI-compatible path.
-function mcpActive() {
-  return state.mcpEnabled && mcpIntegrations().length > 0;
-}
-
-// Reflects MCP state in the Settings panel and the header pill.
-function updateMcpUI() {
-  if (mcpServersInput) mcpServersInput.disabled = !state.mcpEnabled;
-  if (mcpIndicator) mcpIndicator.classList.toggle('hidden', !mcpActive());
-  if (mcpStatusText) {
-    const names = mcpIntegrations().map(i => i.id.replace(/^mcp\//, ''));
-    if (!state.mcpEnabled) {
-      mcpStatusText.textContent = 'Off — chats use the standard endpoint.';
-    } else if (!names.length) {
-      mcpStatusText.textContent = 'On, but no servers listed — add one above.';
-    } else {
-      mcpStatusText.textContent = `Active: ${names.join(', ')}. Tool calls run inside LM Studio.`;
-    }
-  }
-}
-
-// Flattens a stored message's content (string, or OpenAI content-parts array)
-// down to plain text. Used when replaying history into the native endpoint,
-// which takes a single `input` rather than a role-tagged message array.
-function messageToText(content) {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    return content.filter(p => p.type === 'text').map(p => p.text).join('\n');
-  }
-  return '';
-}
-
-// Builds the POST /api/v1/chat body.
-//
-// That endpoint is stateful: it stores the thread and hands back a
-// response_id. When we hold one, only the newest user message is sent and
-// LM Studio supplies the prior context. Otherwise (first turn of a chat, a
-// chat restored from localStorage, or after a regenerate/model switch
-// invalidated the thread) the conversation so far is replayed as one
-// transcript so the model still has context.
-function mcpChatBody({ targetModel, sys, useStream }) {
-  const last = state.messages[state.messages.length - 1];
-  const continuing = !!state.mcpResponseId;
-
-  let text;
-  if (continuing) {
-    text = messageToText(last?.content);
-  } else {
-    text = state.messages
-      .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${messageToText(m.content)}`)
-      .join('\n\n');
-  }
-
-  // Images ride along as separate input parts; text-only stays a plain string.
-  const images = Array.isArray(last?.content)
-    ? last.content.filter(p => p.type === 'image_url' && p.image_url?.url)
-    : [];
-  const input = images.length
-    ? [{ type: 'text', content: text },
-       ...images.map(p => ({ type: 'image', data_url: p.image_url.url }))]
-    : text;
-
-  const body = {
-    model: targetModel || undefined,
-    input,
-    integrations: mcpIntegrations(),
-    max_output_tokens: parseInt(tokensSlider.value),
-    stream: useStream,
-    // This endpoint caps temperature at 1, unlike the 0-2 the slider allows.
-    temperature: Math.min(parseFloat(tempSlider.value), 1),
-  };
-  if (sys) body.system_prompt = sys;
-  if (continuing) body.previous_response_id = state.mcpResponseId;
-  return body;
 }
 
 function titleCaseSlug(slug) {
@@ -1307,6 +1141,14 @@ const LATEX_SYMBOLS = {
   Xi: 'Ξ', Omicron: 'Ο', Pi: 'Π', Rho: 'Ρ', Sigma: 'Σ', Tau: 'Τ',
   Upsilon: 'Υ', Phi: 'Φ', Chi: 'Χ', Psi: 'Ψ', Omega: 'Ω',
 };
+// Every quantifier below is bounded. The unbounded `[\s\S]*?` these rules
+// used to use is fine on well-formed input and quadratic on the input this
+// actually sees: an unclosed "$$" or "\(" mid-stream makes the engine scan to
+// the end of the reply, fail, and retry from the next position, for every
+// position. Capping the span keeps the work linear in the reply length, and
+// costs only the ability to span a math expression longer than the cap —
+// which this substitution can't render meaningfully anyway.
+const LATEX_SPAN = 400;
 const LATEX_SYMBOL_RE = /\\([A-Za-z]+)/g;
 const substituteLatexSymbols = (s) => s
   .replace(/\\text\{([^{}]*)\}/g, '$1')
@@ -1316,32 +1158,36 @@ const substituteLatexSymbols = (s) => s
   .replace(LATEX_SYMBOL_RE, (m, cmd) => LATEX_SYMBOLS[cmd] || m)
   .replace(/\\,|\\;|\\ /g, ' ');
 
+const RE_LATEX_PAREN  = new RegExp(String.raw`\\\(([\s\S]{0,${LATEX_SPAN}}?)\\\)`, 'g');
+const RE_LATEX_SQUARE = new RegExp(String.raw`\\\[([\s\S]{0,${LATEX_SPAN}}?)\\\]`, 'g');
+const RE_LATEX_DOLLAR = new RegExp(String.raw`\$\$([\s\S]{0,${LATEX_SPAN}}?)\$\$`, 'g');
+const RE_LATEX_INLINE = new RegExp(String.raw`\$([^\n$]{0,${LATEX_SPAN}}?\\[A-Za-z]+[^\n$]{0,${LATEX_SPAN}}?)\$`, 'g');
+
 // Runs the substitution above, plus drops now-redundant math delimiters
 // (\(...\), \[...\], $$...$$, and $...$ when it contains a LaTeX command —
 // bare "$" for currency is left alone). Skips fenced code blocks entirely so
 // shell/JS/etc. snippets with literal "$" or backslash escapes are untouched.
 function convertLatexSymbols(text) {
-  const parts = text.split(/(```[\s\S]*?```)/g);
+  // Splitting on the fence marker itself (rather than on a lazy ```…```
+  // pair) means an unterminated fence can't blow up the split either: the
+  // odd/even alternation still identifies which halves are code.
+  const parts = text.split('```');
   return parts.map((part, i) => {
-    if (i % 2 === 1) return part; // fenced code block — leave verbatim
+    if (i % 2 === 1) return part; // inside a fence — leave verbatim
     part = part
-      .replace(/\\\(([\s\S]*?)\\\)/g, (_, inner) => substituteLatexSymbols(inner))
-      .replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => substituteLatexSymbols(inner))
-      .replace(/\$\$([\s\S]*?)\$\$/g, (_, inner) => substituteLatexSymbols(inner))
-      .replace(/\$([^\n$]*\\[A-Za-z]+[^\n$]*)\$/g, (_, inner) => substituteLatexSymbols(inner));
+      .replace(RE_LATEX_PAREN,  (_, inner) => substituteLatexSymbols(inner))
+      .replace(RE_LATEX_SQUARE, (_, inner) => substituteLatexSymbols(inner))
+      .replace(RE_LATEX_DOLLAR, (_, inner) => substituteLatexSymbols(inner))
+      .replace(RE_LATEX_INLINE, (_, inner) => substituteLatexSymbols(inner));
     // Catch-all: LaTeX commands emitted bare, with no $ / \( \) wrapping at
     // all (Gemma does this too). Backslash-prefixed commands are unambiguous
     // — never mistaken for currency — so this is safe outside delimiters too.
     return substituteLatexSymbols(part);
-  }).join('');
+  }).join('```');
 }
 
 function renderMarkdown(text) {
-  text = convertLatexSymbols(text);
-  if (typeof marked !== 'undefined') {
-    return marked.parse(text, { breaks: true });
-  }
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+  return ScholarMD.render(convertLatexSymbols(text));
 }
 
 // Strips special chat-template tokens (e.g. gpt-oss/Harmony-style
@@ -1351,20 +1197,9 @@ function renderMarkdown(text) {
 const SPECIAL_TOKEN_RE = /<\|?(?:channel|message|start|end|return|im_start|im_end|endoftext|eot_id|assistant|system|developer)\|?>/gi;
 const stripSpecialTokens = (s) => s.replace(SPECIAL_TOKEN_RE, '');
 
-// Some models (seen on Gemma) invent their own tool-call syntax instead of
-// the one LM Studio's grammar constraint recognizes, so it never gets
-// intercepted as a real tool call — it just leaks into the reply as raw
-// pseudo-JSON, e.g. "<|toolcall>call:googlesearch:search{queries:[...]}".
-// Swap it for a plain notice instead of showing that text as if it were part
-// of the answer.
-const LEAKED_TOOLCALL_RE = /<\|?tool_?call\|?>\s*call:[\w.]+:[\w.]+\s*\{[\s\S]*?\}/gi;
-const stripLeakedToolcalls = (s) => s.replace(LEAKED_TOOLCALL_RE,
-  '*(model attempted a tool call in a format this LM Studio setup doesn\'t recognize — nothing ran)*');
-
-// Model thinking/reasoning is never hidden — turn the Think toggle off in the
-// composer if you don't want a model to generate it in the first place.
+// Messages render exactly as the model sent them.
 function renderMessage(text) {
-  return renderMarkdown(stripLeakedToolcalls(text));
+  return renderMarkdown(text);
 }
 
 // === Syntax highlighting (dependency-free) ===
@@ -1415,16 +1250,10 @@ function codeLang(codeEl) {
 
 const looksLikeHtmlDoc = (t) => /^\s*(<!doctype html|<html)/i.test(t) || (/<\w+[^>]*>/.test(t) && /<\/(div|body|button|p|span|h\d|style|script)>/i.test(t));
 
-// `streaming` skips syntax highlighting entirely. Each mid-stream tick fully
-// replaces the message's innerHTML (see generateReply), so the freshly
-// re-created <code> element never actually carries the "already
-// highlighted" dataset flag forward — every tick was re-tokenizing the
-// *entire* code block from scratch, and for a long/growing block (a stuck
-// local model repeating itself well past a normal reply length is the
-// classic case) that cost compounds for the whole generation and can bog
-// the tab down badly enough to look like a crash. Code just renders as
-// plain (still monospaced, still selectable/copyable) text while streaming;
-// the final render (streaming=false) highlights it once, for real.
+// `streaming` skips syntax highlighting. Highlighting a block that is still
+// growing means re-tokenizing all of it every time it changes; the finished
+// block gets highlighted exactly once instead, by the final pass. Code still
+// reads as monospaced, selectable, copyable text in the meantime.
 function addCopyButtons(el, streaming) {
   el.querySelectorAll('pre').forEach(pre => {
     const code = pre.querySelector('code');
@@ -1459,6 +1288,133 @@ function addCopyButtons(el, streaming) {
     });
     pre.appendChild(btn);
   });
+}
+
+// === Streaming renderer ===
+//
+// Renders a reply as it arrives without re-doing work already done.
+//
+// The old approach re-rendered the whole message on every update: parse all
+// the markdown accumulated so far, throw away the entire DOM subtree, rebuild
+// it. Each tick was proportional to the length of the reply, and there is one
+// tick per chunk, so a reply of length N cost N² — which no amount of
+// throttling fixes, it only spreads the same total work over fewer frames.
+//
+// Instead, the reply is split at block boundaries. Everything before the last
+// boundary is *settled*: it cannot change no matter what arrives next, so it
+// is parsed once, appended to the DOM, and never touched again. Only the text
+// after that boundary — the block still being written, normally a paragraph
+// or two — is re-rendered per frame. Total work is proportional to N.
+//
+// A boundary is a blank line that is not inside a fenced code block. Blank
+// lines separate blocks in markdown, so committing at one is safe; the fence
+// check is what stops a blank line *inside* a code block from splitting it.
+class StreamRenderer {
+  constructor(bubble) {
+    this.bubble = bubble;
+    this.raw = '';
+    this.committedUpto = 0;   // index in `raw`; everything before is settled
+    this.frame = 0;
+
+    // Boundary scanning is resumable: `scanPos` is how far into `raw` we have
+    // already looked and `inFence` is the fence state at that point, so each
+    // frame examines only the text that arrived since the last one. Rescanning
+    // the whole uncommitted region every frame would reintroduce the quadratic
+    // behaviour this class exists to remove — just in the scan instead of the
+    // parse — whenever a model emits a long run with no blank line in it.
+    this.scanPos = 0;
+    this.inFence = false;
+    this.lastBoundary = -1;
+
+    bubble.innerHTML = '';
+    this.settledEl = document.createElement('div');
+    this.tailEl = document.createElement('div');
+    bubble.appendChild(this.settledEl);
+    bubble.appendChild(this.tailEl);
+  }
+
+  // Advances the scan over any newly-arrived complete lines, recording the
+  // last blank line that sits outside a fenced code block. Returns the index
+  // just past it, or -1 if no such boundary has been seen yet.
+  _boundary() {
+    while (this.scanPos < this.raw.length) {
+      const nl = this.raw.indexOf('\n', this.scanPos);
+      if (nl === -1) break;                     // trailing partial line
+      const line = this.raw.slice(this.scanPos, nl);
+      if (/^\s*(?:`{3,}|~{3,})/.test(line)) this.inFence = !this.inFence;
+      else if (line.trim() === '' && !this.inFence) this.lastBoundary = this.scanPos + 1;
+      this.scanPos = nl + 1;
+    }
+    return this.lastBoundary;
+  }
+
+  // Beyond this, the unsettled tail stops being re-parsed as markdown and
+  // renders as plain text until it settles. Only reachable when a model emits
+  // a very long run with no blank line in it, where per-frame markdown of the
+  // growing tail would start to cost real time.
+  static get MAX_LIVE_TAIL() { return 8000; }
+
+  push(text) {
+    if (!text) return;
+    this.raw += text;
+    this._schedule();
+  }
+
+  // At most one DOM update per animation frame, no matter the chunk rate.
+  _schedule() {
+    if (this.frame) return;
+    this.frame = requestAnimationFrame(() => {
+      this.frame = 0;
+      this._paint();
+    });
+  }
+
+  _paint() {
+    const boundary = this._boundary();
+    if (boundary > this.committedUpto) {
+      const chunk = this.raw.slice(this.committedUpto, boundary);
+      const html = renderMessage(chunk);
+      // Parse into a fragment, decorate just those nodes, then append. Calling
+      // addCopyButtons on the whole settled container instead would re-walk
+      // every block already in it on every commit — cheap per block, but once
+      // per commit across a growing container, which is the same quadratic
+      // shape in miniature.
+      const frag = document.createElement('div');
+      frag.innerHTML = html;
+      addCopyButtons(frag, true);
+      while (frag.firstChild) this.settledEl.appendChild(frag.firstChild);
+      this.committedUpto = boundary;
+    }
+
+    const tail = this.raw.slice(this.committedUpto);
+    if (tail.length > StreamRenderer.MAX_LIVE_TAIL) {
+      this.tailEl.textContent = tail;
+    } else if (tail) {
+      this.tailEl.innerHTML = renderMessage(tail);
+      addCopyButtons(this.tailEl, true);
+    } else {
+      this.tailEl.innerHTML = '';
+    }
+
+    scrollToBottom();
+  }
+
+  // Final, authoritative render. Re-parses the whole reply in one pass so that
+  // anything spanning a commit boundary (a list broken by a blank line, say)
+  // comes out as one construct, then highlights code once.
+  finish() {
+    if (this.frame) { cancelAnimationFrame(this.frame); this.frame = 0; }
+    this.bubble.innerHTML = renderMessage(this.raw);
+    addCopyButtons(this.bubble);
+    scrollToBottom();
+  }
+
+  // Replaces everything with a one-off message (used for an aborted stream
+  // that produced no text).
+  replaceWith(html) {
+    if (this.frame) { cancelAnimationFrame(this.frame); this.frame = 0; }
+    this.bubble.innerHTML = html;
+  }
 }
 
 // Tokens + speed line under a response. Uses server-reported usage when
@@ -1512,7 +1468,8 @@ async function sendMessage() {
 }
 
 // Removes the last assistant reply and asks the model again with the same
-// conversation. Wired to the Regenerate button on the newest AI message.
+// conversation. Wired to Regenerate on both the newest AI message and the
+// user message that prompted it.
 function regenerate() {
   if (state.streaming || !state.connected) return;
   if (state.messages[state.messages.length - 1]?.role === 'assistant') {
@@ -1520,9 +1477,6 @@ function regenerate() {
   }
   const wraps = messagesEl.querySelectorAll('.message.assistant');
   if (wraps.length) wraps[wraps.length - 1].remove();
-  // The server-side MCP thread already contains the reply we just dropped, so
-  // it can't be continued — fall back to re-sending history for this turn.
-  state.mcpResponseId = null;
   saveCurrentSession();
   generateReply();
 }
@@ -1531,7 +1485,6 @@ function regenerate() {
 async function generateReply() {
   // Model selection is purely whatever's in the dropdown — no auto-switching.
   const targetModel = activeModelId();
-  const useMcp = mcpActive();
   const isModelSwitch = !!targetModel && targetModel !== state.lastLoadedModel;
 
   const apiMessages = [];
@@ -1544,6 +1497,7 @@ async function generateReply() {
   state.abortController = new AbortController();
   sendBtn.classList.add('hidden');
   stopBtn.classList.remove('hidden');
+  updateSendBtn();
 
   hideWelcome();
   const wrap = document.createElement('div');
@@ -1569,28 +1523,16 @@ async function generateReply() {
   messagesEl.appendChild(wrap);
   scrollToBottom(true);
 
+  // Reasoning and answer are concatenated for display; nothing is hidden.
   let fullContent = '';
   let reasoning = '';
+  let renderer = null;
 
-  // Response stats: delta count approximates tokens when the server doesn't report usage
+  // Response stats: delta count approximates tokens when the server doesn't
+  // report usage.
   const tStart = performance.now();
   let firstTokenAt = 0;
   let deltaCount = 0;
-  // Re-rendering (full markdown re-parse + innerHTML replace) on every single
-  // streamed token is O(total tokens²) over a long reply and is what was
-  // bogging the tab down — throttle DOM updates instead. The loop always
-  // finishes with one untimed final render, so nothing is ever left stale.
-  //
-  // The interval itself grows with the message so far: re-parsing and
-  // rebuilding the DOM for a short reply is cheap enough to do ~15x/sec and
-  // still feel live, but that same rebuild on a reply that's grown into the
-  // tens of thousands of characters (a model stuck repeating itself well
-  // past a normal reply length, given max_tokens defaults to 20000, is the
-  // realistic case) gets proportionally more expensive every tick. Capping
-  // the interval bounds the worst case instead of grinding the tab down for
-  // the rest of a very long generation.
-  let lastRenderAt = 0;
-  const renderInterval = () => Math.min(1000, 66 + Math.floor((fullContent.length + reasoning.length) / 100));
   let usage = null;
   let finishReason = null;
 
@@ -1602,151 +1544,23 @@ async function generateReply() {
   const slowTimer = setTimeout(() => { if (!firstTokenAt) body.appendChild(slowNote); }, 10000);
   const clearSlow = () => { clearTimeout(slowTimer); slowNote.remove(); };
 
-  // Combine separate reasoning (LM Studio's reasoning_content) with the
-  // answer — nothing is hidden, so this just concatenates them for display.
-  const withReasoning = () =>
-    reasoning ? `${reasoning}\n\n${fullContent}` : fullContent;
-
-  // Live list of MCP tool calls for this reply, rendered above the text.
-  //
-  // Calls are tracked in an array rather than a name-keyed map: a model stuck
-  // in a loop calls the same tool over and over, and each attempt needs its
-  // own row (and its own arguments) for the loop to be visible at all.
-  const toolsEl = document.createElement('div');
-  toolsEl.className = 'tool-calls hidden';
-  body.insertBefore(toolsEl, bubble);
-  const toolCalls = [];  // { el, name, sig }
-
-  // Plugin integrations (what mcpIntegrations sends) report `plugin_id`;
-  // ephemeral MCP servers report `server_label`.
-  const providerLabel = (info) =>
-    info?.server_label || String(info?.plugin_id || '').replace(/^mcp\//, '');
-
-  // Arguments on one line, so a repeated call is recognisable at a glance.
-  const formatArgs = (args) => {
-    if (args == null || typeof args !== 'object') return '';
-    const s = JSON.stringify(args);
-    return s.length > 140 ? s.slice(0, 139) + '…' : s;
-  };
-
-  // Warns once the same tool+arguments pair comes round repeatedly — the
-  // shape a tool loop takes. LM Studio drives the tool loop server-side and
-  // /api/v1/chat has no call limit, so Stop is the only way out.
-  const loopNote = document.createElement('div');
-  loopNote.className = 'tool-loop-note hidden';
-  const checkLoop = (call) => {
-    const n = toolCalls.filter(c => c.sig === call.sig).length;
-    if (n < 3) return;
-    loopNote.textContent =
-      `⚠ ${call.name} has run ${n} times with the same arguments — the model ` +
-      `looks stuck in a tool loop. Press Stop, then try fewer MCP tools, a ` +
-      `lower temperature, or a stronger tool-calling model.`;
-    loopNote.classList.remove('hidden');
-    toolsEl.appendChild(loopNote);  // keep it last as rows keep arriving
-  };
-
-  const setToolArgs = (call, args) => {
-    if (args == null || call.sig !== call.name) return;
-    call.sig = call.name + ' ' + JSON.stringify(args);
-    const argsEl = call.el.querySelector('.tool-call-args');
-    if (argsEl) argsEl.textContent = formatArgs(args);
-    // Repeats can only be spotted once the arguments are known.
-    if (toolCalls.some(c => c !== call && c.sig === call.sig)) call.el.classList.add('repeat');
-  };
-
-  const addToolCall = (name, provider) => {
-    toolsEl.classList.remove('hidden');
-    const el = document.createElement('div');
-    el.className = 'tool-call running';
-    el.innerHTML =
-      `<span class="tool-call-spinner"></span>` +
-      `<span class="tool-call-name"></span>` +
-      `<span class="tool-call-args"></span>` +
-      `<span class="tool-call-src"></span>`;
-    el.querySelector('.tool-call-name').textContent = name;
-    el.querySelector('.tool-call-src').textContent = provider || '';
-    toolsEl.appendChild(el);
-    if (!loopNote.classList.contains('hidden')) toolsEl.appendChild(loopNote);
-    const call = { el, name, sig: name };
-    toolCalls.push(call);
-    scrollToBottom();
-    return call;
-  };
-
-  // `name` is absent on some end events — fall back to the newest still-running
-  // row, and synthesise a row when a failure has no matching start at all
-  // (an invalid tool name fails before any tool_call.start is emitted).
-  const findRunning = (name) => {
-    for (let i = toolCalls.length - 1; i >= 0; i--) {
-      const c = toolCalls[i];
-      if (c.el.classList.contains('running') && (!name || c.name === name)) return c;
-    }
-    return name ? findRunning(null) : null;
-  };
-
-  // Some tool implementations report failure by returning a normal string
-  // result (e.g. "Error: DuckDuckGo CAPTCHA blocked the search.") rather
-  // than failing the call — tool_call.success either way, nothing in the
-  // event itself distinguishes it. A truncated output preview is the only
-  // way to see that from the row instead of relying on the model to relay
-  // it faithfully in its answer.
-  const formatOutput = (output) => {
-    if (!output) return '';
-    const s = String(output).replace(/\s+/g, ' ').trim();
-    return s.length > 200 ? s.slice(0, 199) + '…' : s;
-  };
-
-  const finishToolCall = (name, ok, { args, reason, output } = {}) => {
-    const call = findRunning(name) || addToolCall(name || 'tool', '');
-    setToolArgs(call, args);
-    call.el.classList.remove('running');
-    call.el.classList.add(ok ? 'done' : 'failed');
-    const spinner = call.el.querySelector('.tool-call-spinner');
-    if (spinner) spinner.textContent = ok ? '✓' : '✕';
-    if (!ok && reason) {
-      const why = document.createElement('span');
-      why.className = 'tool-call-error';
-      why.textContent = reason;
-      call.el.appendChild(why);
-    }
-    if (output) {
-      const preview = document.createElement('span');
-      preview.className = 'tool-call-output';
-      preview.textContent = formatOutput(output);
-      preview.title = String(output);
-      call.el.appendChild(preview);
-    }
-    checkLoop(call);
+  // The placeholder (dots / loading bar) stays until the first token, at which
+  // point the renderer takes the bubble over.
+  const startRenderer = () => {
+    if (!renderer) renderer = new StreamRenderer(bubble);
+    return renderer;
   };
 
   try {
-    const url = useMcp
-      ? state.apiBase + '/api/v1/chat'
-      : state.apiBase + '/v1/chat/completions';
+    const payload = {
+      model: targetModel || undefined,
+      messages: apiMessages,
+      temperature: parseFloat(tempSlider.value),
+      max_tokens: parseInt(tokensSlider.value),
+      stream: useStream,
+    };
 
-    // The two endpoints take different request shapes — see mcpChatBody.
-    const payload = useMcp
-      ? mcpChatBody({ targetModel, sys, useStream })
-      : {
-          model: targetModel || undefined,
-          messages: apiMessages,
-          temperature: parseFloat(tempSlider.value),
-          max_tokens: parseInt(tokensSlider.value),
-          stream: useStream,
-        };
-
-    // Reasoning controls — additive on top of either shape above. A model
-    // that doesn't recognize these fields just ignores them; "on"/"normal"
-    // are each the default already, so only deviations from that get sent.
-    // Two independent mechanisms, because different model families use
-    // different ones: Qwen3-style templates read chat_template_kwargs, while
-    // gpt-oss-style models read the nested `reasoning.effort` LM Studio (and
-    // OpenAI's Responses API) actually document — NOT a flat
-    // `reasoning_effort` string, which LM Studio silently ignores.
-    if (!state.enableThinking) payload.chat_template_kwargs = { enable_thinking: false };
-    if (state.lowEffort) payload.reasoning = { effort: 'low' };
-
-    const resp = await fetch(url, {
+    const resp = await fetch(state.apiBase + '/v1/chat/completions', {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload),
@@ -1763,7 +1577,10 @@ async function generateReply() {
       const decoder = new TextDecoder();
       let buffer = '';
 
-      while (true) {
+      // The SSE frame loop does nothing but parse and accumulate. Painting is
+      // the renderer's job and happens at most once per animation frame, so
+      // chunk arrival rate no longer drives DOM work.
+      for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -1773,126 +1590,63 @@ async function generateReply() {
 
         for (const line of lines) {
           const trimmed = line.trim();
-          if (!trimmed || !trimmed.startsWith('data: ')) continue;
-          const data = trimmed.slice(6);
-          if (data === '[DONE]') continue;
+          if (!trimmed.startsWith('data:')) continue;
+          const data = trimmed.slice(5).trim();
+          if (!data || data === '[DONE]') continue;
 
+          let chunk;
           try {
-            const chunk = JSON.parse(data);
-            let changed = false;
-
-            if (useMcp) {
-              // Native endpoint: named events, each carrying its own `type`.
-              switch (chunk.type) {
-                case 'reasoning.delta':
-                  if (chunk.content) { reasoning += chunk.content; changed = true; }
-                  break;
-                case 'message.delta':
-                  if (chunk.content) { fullContent += chunk.content; changed = true; }
-                  break;
-                case 'tool_call.start':
-                  addToolCall(chunk.tool || 'tool', providerLabel(chunk.provider_info));
-                  break;
-                case 'tool_call.arguments': {
-                  const call = findRunning(chunk.tool);
-                  if (call) setToolArgs(call, chunk.arguments);
-                  break;
-                }
-                case 'tool_call.success':
-                  finishToolCall(chunk.tool, true, { args: chunk.arguments, output: chunk.output });
-                  break;
-                case 'tool_call.failure':
-                  // This event carries no top-level `tool` — the attempted name
-                  // and the arguments live under `metadata`, the cause in
-                  // `reason` ("Cannot find tool with name open_browser.").
-                  finishToolCall(chunk.metadata?.tool_name, false, {
-                    args: chunk.metadata?.arguments,
-                    reason: chunk.reason,
-                  });
-                  break;
-                case 'error':
-                  // `error` is an object: { type, message, code, param }.
-                  throw new Error(chunk.error?.message || chunk.message || 'Stream error');
-                case 'chat.end': {
-                  const r = chunk.result || {};
-                  if (r.stats) {
-                    usage = {
-                      prompt_tokens: r.stats.input_tokens,
-                      completion_tokens: r.stats.total_output_tokens,
-                    };
-                  }
-                  // Remember the thread so the next turn can continue it
-                  // instead of replaying the whole conversation.
-                  if (r.response_id) state.mcpResponseId = r.response_id;
-                  break;
-                }
-              }
-            } else {
-              if (chunk.usage) usage = chunk.usage;
-              if (chunk.choices?.[0]?.finish_reason) finishReason = chunk.choices[0].finish_reason;
-              const delta = chunk.choices?.[0]?.delta || {};
-              if (delta.reasoning_content) { reasoning += delta.reasoning_content; changed = true; }
-              if (delta.content) { fullContent += delta.content; changed = true; }
-            }
-
-            if (changed) {
-              const now = performance.now();
-              if (!firstTokenAt) { firstTokenAt = now; state.lastLoadedModel = targetModel; clearSlow(); }
-              deltaCount++;
-              if (now - lastRenderAt >= renderInterval()) {
-                lastRenderAt = now;
-                bubble.innerHTML = renderMessage(withReasoning());
-                addCopyButtons(bubble, true);
-                scrollToBottom();
-              }
-            }
-          } catch(e) {
-            if (e instanceof SyntaxError) continue; // partial/garbage line
-            throw e;
+            chunk = JSON.parse(data);
+          } catch (e) {
+            continue; // partial or non-JSON keepalive line
           }
+
+          if (chunk.error) {
+            throw new Error(chunk.error.message || 'Stream error');
+          }
+          if (chunk.usage) usage = chunk.usage;
+          if (chunk.choices?.[0]?.finish_reason) finishReason = chunk.choices[0].finish_reason;
+
+          const delta = chunk.choices?.[0]?.delta || {};
+          let added = '';
+          if (delta.reasoning_content) { reasoning += delta.reasoning_content; added += delta.reasoning_content; }
+          if (delta.content) {
+            // Keep the display order (reasoning, then answer) intact the first
+            // time the answer starts after a reasoning block.
+            if (reasoning && !fullContent) added += '\n\n';
+            fullContent += delta.content;
+            added += delta.content;
+          }
+          if (!added) continue;
+
+          if (!firstTokenAt) {
+            firstTokenAt = performance.now();
+            state.lastLoadedModel = targetModel;
+            clearSlow();
+            startRenderer();
+          }
+          deltaCount++;
+          renderer.push(added);
         }
       }
 
-      bubble.innerHTML = renderMessage(withReasoning());
-      addCopyButtons(bubble);
-      scrollToBottom();
-    } else if (useMcp) {
-      const data = await resp.json();
-      if (data.stats) {
-        usage = {
-          prompt_tokens: data.stats.input_tokens,
-          completion_tokens: data.stats.total_output_tokens,
-        };
+      // A stream that closed without ever sending content still needs to say
+      // something — the placeholder dots are gone by now either way.
+      if (!fullContent && !reasoning) {
+        fullContent = '(empty response)';
+        bubble.innerHTML = renderMessage(fullContent);
+      } else {
+        startRenderer().finish();
       }
-      if (data.response_id) state.mcpResponseId = data.response_id;
-      // The native endpoint returns an ordered `output` array mixing reasoning,
-      // tool calls and message parts — flatten it into the same shape the
-      // OpenAI path produces.
-      for (const part of data.output || []) {
-        if (part.type === 'message') fullContent += part.content || '';
-        else if (part.type === 'reasoning') reasoning += part.content || '';
-        else if (part.type === 'tool_call') {
-          addToolCall(part.tool || part.name || 'tool', providerLabel(part.provider_info));
-          finishToolCall(part.tool || part.name, true, { args: part.arguments, output: part.output });
-        }
-      }
-      if (!fullContent && !reasoning) fullContent = '(empty response)';
-      state.lastLoadedModel = targetModel;
-      bubble.innerHTML = renderMessage(withReasoning());
-      addCopyButtons(bubble);
-      scrollToBottom();
     } else {
       const data = await resp.json();
       usage = data.usage || null;
       finishReason = data.choices?.[0]?.finish_reason || null;
       const msg = data.choices?.[0]?.message || {};
       reasoning = msg.reasoning_content || '';
-      // Only substitute the placeholder when there's truly nothing — if
-      // reasoning exists, keep content empty so the boundary finder can
-      // extract an answer that the parser swallowed into reasoning.
       fullContent = msg.content || (reasoning ? '' : '(empty response)');
       state.lastLoadedModel = targetModel;
-      bubble.innerHTML = renderMessage(withReasoning());
+      bubble.innerHTML = renderMessage(reasoning ? `${reasoning}\n\n${fullContent}` : fullContent);
       addCopyButtons(bubble);
       scrollToBottom();
     }
@@ -1915,37 +1669,32 @@ async function generateReply() {
 
   } catch (err) {
     if (err.name === 'AbortError') {
-      if (fullContent) {
+      // Keep whatever arrived before Stop — it's a real partial answer.
+      if (fullContent || reasoning) {
+        if (renderer) renderer.finish();
         appendStats(body, { tStart, firstTokenAt, deltaCount, usage });
-        addMessageActions(body, () => fullContent, () => JSON.stringify({ model: targetModel, aborted: true, reasoning_content: reasoning || undefined, content: fullContent }, null, 2));
+        addMessageActions(body, () => fullContent,
+          () => JSON.stringify({ model: targetModel, aborted: true, reasoning_content: reasoning || undefined, content: fullContent }, null, 2));
         state.messages.push({ role: 'assistant', content: fullContent });
         saveCurrentSession();
+      } else if (renderer) {
+        renderer.replaceWith('<em>Stopped.</em>');
       } else {
         bubble.innerHTML = '<em>Stopped.</em>';
       }
-      // A stopped MCP turn leaves the server thread in an unknown state.
-      state.mcpResponseId = null;
-    } else if (useMcp) {
-      // Don't tear down the connection over an MCP-specific failure — the
-      // plain endpoint may well still be fine. Surface it and let the user
-      // switch MCP off if the tool server is the problem.
-      state.mcpResponseId = null;
-      bubble.className = 'message-content error';
-      // A 401/403 here is almost always the token, not the server name — LM
-      // Studio only exposes mcp.json servers to API clients when auth is on
-      // and the token has Integration Access.
-      const isAuth = /HTTP (401|403)/.test(err.message);
-      bubble.textContent = isAuth
-        ? `MCP permission denied. In LM Studio: Developer → Server Settings → ` +
-          `enable "Require Authentication", then Manage Tokens → create a token ` +
-          `with Integration Access, and paste it into Settings → LM Studio API Token. ` +
-          `(${err.message})`
-        : `MCP request failed: ${err.message}. Check that the MCP server names in ` +
-          `Settings match your LM Studio mcp.json, and that this LM Studio build ` +
-          `supports /api/v1/chat.`;
     } else {
-      bubble.className = 'message-content error';
-      bubble.textContent = err.message;
+      // A reply that partly arrived before the failure is still worth keeping
+      // on screen, with the error appended rather than replacing it.
+      if (renderer && (fullContent || reasoning)) {
+        renderer.finish();
+        const note = document.createElement('div');
+        note.className = 'message-content error';
+        note.textContent = err.message;
+        body.appendChild(note);
+      } else {
+        bubble.className = 'message-content error';
+        bubble.textContent = err.message;
+      }
       state.connected = false;
       setStatus('disconnected');
       setTimeout(connect, 3000);
@@ -2040,6 +1789,27 @@ function addUserMessageActions(body, wrap, bubble, text, attachments, index) {
     edit.innerHTML = EDIT_SVG + '<span>Edit</span>';
     edit.addEventListener('click', () => startEditMessage(body, wrap, bubble, row, text, attachments, index));
     row.appendChild(edit);
+
+    // Re-asks with this prompt as the last word, dropping everything that
+    // followed it. On the newest prompt that's just "answer again"; on an
+    // older one it rewinds the conversation to that point first.
+    const regen = document.createElement('button');
+    regen.className = 'msg-action-btn';
+    regen.innerHTML = REGEN_SVG + '<span>Regenerate</span>';
+    regen.addEventListener('click', () => {
+      if (state.streaming || !state.connected) return;
+      state.messages = state.messages.slice(0, index + 1);
+      // Drop every rendered message after this one so the DOM matches.
+      let node = wrap.nextSibling;
+      while (node) {
+        const next = node.nextSibling;
+        node.remove();
+        node = next;
+      }
+      saveCurrentSession();
+      generateReply();
+    });
+    row.appendChild(regen);
   }
 
   body.appendChild(row);
@@ -2086,8 +1856,6 @@ function startEditMessage(body, wrap, bubble, actionsRow, text, attachments, ind
     const newContent = buildApiContent(newText, attachments);
     state.messages = state.messages.slice(0, index);
     state.messages.push({ role: 'user', content: newContent });
-    // The truncated tail invalidates any server-side MCP thread, same as regenerate.
-    state.mcpResponseId = null;
 
     // Drop this message and everything after it, then re-render the edit.
     let node = wrap;
@@ -2112,8 +1880,6 @@ async function maybeAutoName() {
 
   const userText = extractText(state.messages.find(m => m.role === 'user')?.content || '').slice(0, 400);
   const aiText = extractText(state.messages.find(m => m.role === 'assistant')?.content || '').slice(0, 400);
-  // Always name via the plain completions endpoint — a cheap one-off that
-  // shouldn't drag MCP tools into the loop.
   const namingModel = activeModelId();
   try {
     const resp = await fetch(state.apiBase + '/v1/chat/completions', {
@@ -2165,7 +1931,6 @@ function stopStreaming() {
 function newChat() {
   state.messages = [];
   state.currentSessionId = null;
-  state.mcpResponseId = null;
   state.chatFullyLoaded = false;
   clearAttachments();
   messagesEl.innerHTML = '';
@@ -2231,8 +1996,6 @@ function saveCurrentSession() {
     temperature: parseFloat(tempSlider.value),
     maxTokens: parseInt(tokensSlider.value),
     systemPrompt: systemPrompt.value,
-    enableThinking: state.enableThinking,
-    lowEffort: state.lowEffort,
   };
   session.updatedAt = now;
   // Keep the active session at the top, newest-first
@@ -2248,8 +2011,6 @@ function loadSession(id) {
   if (state.streaming) stopStreaming();
   state.currentSessionId = id;
   state.messages = JSON.parse(JSON.stringify(session.messages || []));
-  // Any server-side MCP thread belonged to the chat we just left.
-  state.mcpResponseId = null;
   clearAttachments();
 
   // Restore the chat's model if it's still loaded in LM Studio.
@@ -2266,9 +2027,6 @@ function loadSession(id) {
     if (st.temperature != null) { tempSlider.value = st.temperature; tempValue.textContent = tempSlider.value; }
     if (st.maxTokens != null) { tokensSlider.value = st.maxTokens; tokensValue.textContent = tokensSlider.value; }
     if (st.systemPrompt != null) systemPrompt.value = st.systemPrompt;
-    if (st.enableThinking != null) state.enableThinking = st.enableThinking;
-    if (st.lowEffort != null) state.lowEffort = st.lowEffort;
-    updateReasoningToggleUI();
     saveSettings();
   }
 
@@ -2811,24 +2569,6 @@ function setupListeners() {
     closeSidebar();
   });
 
-  // MCP — switching servers or toggling invalidates any open server-side
-  // thread, since the next turn runs with a different tool set.
-  if (mcpToggle) {
-    mcpToggle.addEventListener('change', () => {
-      state.mcpEnabled = mcpToggle.checked;
-      state.mcpResponseId = null;
-      saveSettings();
-      updateMcpUI();
-    });
-  }
-  if (mcpServersInput) {
-    mcpServersInput.addEventListener('input', () => {
-      state.mcpServers = mcpServersInput.value;
-      state.mcpResponseId = null;
-      saveSettings();
-      updateMcpUI();
-    });
-  }
   // Both token fields (Settings and the setup screen) drive the same value —
   // the setup one exists so a bad token is still fixable while disconnected,
   // when Settings is unreachable.
@@ -2914,20 +2654,6 @@ function setupListeners() {
   attachFileBtn.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', e => { handleAttachedFiles([...e.target.files]); e.target.value = ''; });
 
-  if (thinkingToggleBtn) {
-    thinkingToggleBtn.addEventListener('click', () => {
-      state.enableThinking = !state.enableThinking;
-      saveSettings();
-      updateReasoningToggleUI();
-    });
-  }
-  if (lowEffortToggleBtn) {
-    lowEffortToggleBtn.addEventListener('click', () => {
-      state.lowEffort = !state.lowEffort;
-      saveSettings();
-      updateReasoningToggleUI();
-    });
-  }
 
   userInput.addEventListener('paste', e => {
     if (!state.modelCaps.vision) return;

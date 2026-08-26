@@ -2,7 +2,7 @@
 
 A personal chat interface hosted on GitHub Pages that connects to LM Studio running on your PC via Tailscale. Access your local LLM from your phone, tablet, or any browser — anywhere.
 
-**Live URL:** https://notherobot.github.io/lmstudio-remote-interface/
+**Live URL:** https://notherobot.github.io/scholar/
 
 ---
 
@@ -45,7 +45,7 @@ Open the Tailscale app on your PC — your IP looks like `100.x.x.x`. You can al
 
 ### 4. Connect
 
-1. Open https://notherobot.github.io/lmstudio-remote-interface/ on your phone
+1. Open https://notherobot.github.io/scholar/ on your phone
 2. Enter `100.x.x.x:1234` (your Tailscale IP + LM Studio port)
 3. Tap **Connect**
 4. Done — start chatting
@@ -62,19 +62,21 @@ No Tailscale needed. On the setup screen, click the **localhost:1234** link.
 
 ## Features
 
-- Streaming responses with stop button
-- Model selector (auto-populated from LM Studio)
-- Markdown rendering with code block copy buttons
+- Streaming responses with a stop button
+- Model picker, auto-populated from LM Studio, with size/context/quantization info
+- Markdown rendering with code block copy buttons and syntax highlighting
+- HTML preview for code blocks that contain a page
+- Attachments: images, PDFs (text extracted in-browser), and plain-text/code files
+- Copy, Edit, and Regenerate on your own messages; Copy and Regenerate on replies
+- Saved chat history with search, pinning, rename, and auto-generated titles
 - System prompt, temperature, max tokens
-- New chat button
 - Saves connection and settings to localStorage
-- Auto-reconnects if connection drops
+- Auto-reconnects if the connection drops
 - PWA — add to home screen on mobile
 
 ## Planned
 
 - Voice chat
-- File attachments
 - Native Android / iOS app
 
 ---
