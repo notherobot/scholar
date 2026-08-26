@@ -1,13 +1,17 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.8.1';
-const APP_VERSION_DATE = '2026-08-26T18:00:00Z';
+const APP_VERSION = 'v0.8.2';
+const APP_VERSION_DATE = '2026-08-26T19:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.8.2', date: '2026-08-26T19:00:00Z', notes: [
+    '"Scholar" title added to the header',
+    'The Chats panel now reopens automatically on reload if you left it open — like Claude\'s sidebar — on wide screens; unchanged on mobile, where it\'s a drawer rather than a docked panel',
+  ] },
   { version: 'v0.8.1', date: '2026-08-26T18:00:00Z', notes: [
     'Settings and Chats panels are wider by default, and can be dragged wider (or narrower) from their inner edge — the size sticks across reloads',
     'Chats can be organized into folders: create one from the Chats panel, drag a chat onto it or use its new folder icon to move it, rename or delete folders anytime. Deleting a folder keeps its chats — they just become ungrouped again',
@@ -289,6 +293,14 @@ function init() {
     sidebarUrl.value = savedUrl;
     showChat();
     connect();
+    // Restore the Chats panel's open/closed state from last time — but only
+    // on desktop widths, where it pushes the layout over rather than
+    // covering it as a full-screen drawer. Auto-opening that drawer over the
+    // chat the moment the page loads on a phone would be jarring in a way
+    // reopening a docked sidebar on a wide screen isn't.
+    if (window.innerWidth >= 768 && localStorage.getItem(HISTORY_OPEN_KEY) === '1') {
+      openHistory();
+    }
   }
 }
 
@@ -2430,17 +2442,27 @@ function renderHistoryList() {
   groupSessions(folderless).forEach(group => appendHistoryGroup(group.label, group.items));
 }
 
+// Remembers whether the Chats panel was left open, so a reload restores it —
+// like Claude's sidebar — instead of always starting closed. Only persisted
+// as an open/closed *preference*; restoring it into an actual open panel on
+// launch is still gated to desktop widths (see init()), matching how the
+// panel already behaves as a push-over sidebar there but a full overlay
+// drawer on mobile.
+const HISTORY_OPEN_KEY = 'lmstudio-history-open';
+
 function openHistory() {
   renderHistoryList();
   historyPanel.classList.remove('hidden');
   historyOverlay.classList.remove('hidden'); // hidden on wide screens via CSS
   appEl.classList.add('history-open');        // pushes content over on desktop
+  localStorage.setItem(HISTORY_OPEN_KEY, '1');
 }
 
 function closeHistory() {
   historyPanel.classList.add('hidden');
   historyOverlay.classList.add('hidden');
   appEl.classList.remove('history-open');
+  localStorage.setItem(HISTORY_OPEN_KEY, '0');
 }
 
 function toggleHistory() {

@@ -320,6 +320,22 @@ header::before {
   gap: 8px;
 }
 
+.app-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Same threshold the version dropdown already hides at — past this point
+   there isn't room for both the title and a useful model picker. */
+@media (max-width: 400px) {
+  .app-title { display: none; }
+}
+
 .header-version {
   white-space: nowrap;
   font-size: 0.7rem;
