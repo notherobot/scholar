@@ -1,19 +1,15 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.7.39';
-const APP_VERSION_DATE = '2026-08-26T00:30:00Z';
+const APP_VERSION = 'v0.7.38';
+const APP_VERSION_DATE = '2026-08-26T00:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
-  { version: 'v0.7.39', date: '2026-08-26T00:30:00Z', notes: [
-    'Fixed API token not being sent when reconnecting after a disconnect — token field now syncs to state before attempting connection',
-  ] },
   { version: 'v0.7.38', date: '2026-08-26T00:00:00Z', notes: [
-    'Streaming performance optimized: re-render interval increases with reply length to prevent browser slowdown on long responses',
-    'Code blocks now render plain during streaming and highlight only after generation completes',
+    'Fixed the API token sometimes not being sent on connect — it\'s now synced from the field right before the request instead of only on keystrokes',
   ] },
   { version: 'v0.7.37', date: '2026-08-12T10:00:00Z', notes: [
     'Welcome message fades out over 100ms as soon as you start typing, instead of waiting for the message to send',
@@ -443,10 +439,11 @@ async function tryConnect(rawUrl) {
     return false;
   }
 
-  // Ensure API token from the setup field is synced to state before connecting
-  if (setupToken) {
-    state.apiToken = setupToken.value.trim();
-  }
+  // The token field can hold a value with no 'input' event having fired yet
+  // (e.g. it was never touched after showSetup() re-populated it from state,
+  // or autofill set it) — sync it into state now so it's not silently
+  // dropped from the Authorization header on this connection attempt.
+  if (setupToken) state.apiToken = setupToken.value.trim();
 
   setupConnect.disabled = true;
   setupConnect.textContent = 'Connecting...';

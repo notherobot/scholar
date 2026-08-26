@@ -9,9 +9,9 @@
   <meta name="theme-color" content="#0a121c">
   <title>Scholar</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="icon" type="image/png" href="Scholar_favicon_32.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=0.7.39">
+  <link rel="stylesheet" href="style.css?v=0.7.38">
 </head>
 <body>
   <div id="app">
@@ -71,8 +71,8 @@
             <input type="checkbox" id="mcp-toggle">
             <span>Enable MCP tools</span>
           </label>
-          <input type="text" id="mcp-servers" placeholder="playwright" spellcheck="false" autocomplete="off">
-          <p class="setting-hint">Comma-separated MCP server names from your LM Studio <code>mcp.json</code> (e.g. <code>playwright</code>). Routes chats through LM Studio's native endpoint so the model can call those tools; LM Studio runs them locally.</p>
+          <input type="text" id="mcp-servers" placeholder="danielsig/duckduckgo" spellcheck="false" autocomplete="off">
+          <p class="setting-hint">Comma-separated tool providers. Use the plain server name for anything in your LM Studio <code>mcp.json</code> (e.g. <code>playwright</code>), or the full <code>owner/name</code> for a plugin installed from the LM Studio Hub (e.g. <code>danielsig/duckduckgo</code>). Routes chats through LM Studio's native endpoint so the model can call those tools; LM Studio runs them locally.</p>
           <p class="setting-hint" id="mcp-status-text"></p>
         </div>
         <div class="setting-group">
@@ -84,8 +84,8 @@
           <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.7">
         </div>
         <div class="setting-group">
-          <label for="max-tokens">Max Tokens: <span id="tokens-value">2048</span></label>
-          <input type="range" id="max-tokens" min="64" max="163840" step="64" value="2048">
+          <label for="max-tokens">Max Tokens: <span id="tokens-value">20000</span></label>
+          <input type="range" id="max-tokens" min="64" max="163840" step="64" value="20000">
         </div>
         <div class="setting-group">
           <label class="checkbox-row">
@@ -94,13 +94,21 @@
           </label>
         </div>
         <div class="setting-group">
-          <label class="checkbox-row">
-            <input type="checkbox" id="collapse-toggle" checked>
-            <span>Collapse model thinking</span>
-          </label>
+          <label>Data &amp; Storage</label>
+          <p class="setting-hint" id="data-stats-text" style="margin-top:0">—</p>
+          <label for="message-load-limit">Messages loaded per chat: <span id="message-load-limit-value">50</span></label>
+          <input type="range" id="message-load-limit" min="10" max="300" step="10" value="50">
+          <p class="setting-hint">Older messages stay saved — this only limits how many render when you open a chat, which is what makes long chats feel heavy to load. A banner at the top lets you load the full chat on demand.</p>
+          <div class="data-actions">
+            <button id="strip-images-btn" class="btn-sm">Remove images from this chat</button>
+            <button id="clear-all-chats-btn" class="btn-sm btn-sm-danger">Clear all chat history</button>
+          </div>
         </div>
         <div class="setting-group">
           <button id="disconnect-btn" class="btn-danger">Disconnect &amp; Change Server</button>
+        </div>
+        <div class="sidebar-version">
+          <span class="app-version"></span>
         </div>
       </div>
     </aside>
@@ -135,9 +143,15 @@
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         </button>
         <div id="status-indicator" class="status disconnected"></div>
-        <select id="model-select" class="model-dropdown" disabled>
-          <option value="">Loading...</option>
-        </select>
+        <div class="model-picker-wrap">
+          <button id="model-picker-btn" type="button" class="model-dropdown model-picker-btn" disabled aria-haspopup="dialog">
+            <span id="model-picker-label">Loading...</span>
+            <svg class="model-picker-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <select id="model-select" class="visually-hidden" disabled>
+            <option value="">Loading...</option>
+          </select>
+        </div>
         <span id="mcp-indicator" class="mcp-pill hidden" title="MCP tools are enabled for this chat">MCP</span>
       </div>
       <div class="header-right">
@@ -145,20 +159,8 @@
           <button id="version-btn" class="app-version header-version" aria-label="Show changelog" title="Click for changelog"></button>
           <div id="version-dropdown" class="version-dropdown hidden">
             <div class="version-dropdown-content">
-              <div class="version-header">v0.7.39</div>
-              <ul class="version-list">
-                <li>Favicon opacity fixed to 100%</li>
-                <li>Connect errors show the exact URL tried</li>
-                <li>Show/Hide toggle on token fields</li>
-                <li>Port no longer forced to 1234</li>
-                <li>API token field on setup screen</li>
-                <li>LM Studio API token support</li>
-                <li>MCP tool support (Playwright, etc.)</li>
-                <li>Live tool-call activity in replies</li>
-                <li>MCP pill in header when active</li>
-                <li>AnythingLLM integration removed</li>
-                <li>Simplified model picker</li>
-              </ul>
+              <div id="version-list-recent"></div>
+              <button type="button" id="changelog-view-all" class="link-btn changelog-view-all">View last 10 updates</button>
             </div>
           </div>
         </div>
@@ -189,11 +191,22 @@
     <footer id="input-area" class="hidden">
       <div id="attachments" class="attachments hidden"></div>
       <div class="composer">
-        <button id="attach-file-btn" class="attach-icon" aria-label="Attach photos or files" title="Attach photos or files">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-        </button>
         <div class="input-wrapper">
           <textarea id="user-input" placeholder="Message your model..." rows="1"></textarea>
+        </div>
+        <div class="composer-controls">
+          <button id="attach-file-btn" class="attach-icon" aria-label="Attach photos or files" title="Attach photos or files">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          </button>
+          <button id="thinking-toggle-btn" type="button" class="tool-toggle-btn" aria-pressed="true" aria-label="Toggle model thinking" title="Model thinking: on — click to turn off">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+            <span>Think</span>
+          </button>
+          <button id="low-effort-toggle-btn" type="button" class="tool-toggle-btn" aria-pressed="false" aria-label="Toggle low reasoning effort" title="Reasoning effort: normal — click for low effort">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <span>Low effort</span>
+          </button>
+          <div class="composer-controls-spacer"></div>
           <button id="send-btn" class="send-button" disabled aria-label="Send">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
           </button>
@@ -202,7 +215,7 @@
           </button>
         </div>
       </div>
-      <input type="file" id="file-input" accept="image/*,.txt,.md,.markdown,.json,.csv,.tsv,.log,.js,.jsx,.ts,.tsx,.py,.html,.htm,.css,.scss,.xml,.yaml,.yml,.toml,.ini,.sh,.bash,.java,.c,.h,.cpp,.hpp,.cs,.go,.rs,.rb,.php,.sql,.swift,.kt,.r" multiple hidden>
+      <input type="file" id="file-input" accept="image/*,.pdf,application/pdf,.txt,.md,.markdown,.json,.csv,.tsv,.log,.js,.jsx,.ts,.tsx,.py,.html,.htm,.css,.scss,.xml,.yaml,.yml,.toml,.ini,.sh,.bash,.java,.c,.h,.cpp,.hpp,.cs,.go,.rs,.rb,.php,.sql,.swift,.kt,.r" multiple hidden>
     </footer>
 
     <!-- HTML preview modal (artifacts-lite) -->
@@ -217,9 +230,36 @@
         <iframe id="preview-frame" sandbox="allow-scripts" title="HTML preview"></iframe>
       </div>
     </div>
+
+    <!-- Model picker modal -->
+    <div id="model-modal" class="preview-modal hidden">
+      <div class="preview-panel model-picker-panel">
+        <div class="preview-head">
+          <span>Select model</span>
+          <button id="model-modal-close" class="icon-btn" aria-label="Close model picker">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div id="model-picker-list" class="model-picker-list"></div>
+      </div>
+    </div>
+
+    <!-- Changelog modal (last 10 updates) -->
+    <div id="changelog-modal" class="preview-modal hidden">
+      <div class="preview-panel changelog-panel">
+        <div class="preview-head">
+          <span>Changelog</span>
+          <button id="changelog-close" class="icon-btn" aria-label="Close changelog">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div id="changelog-modal-list" class="changelog-modal-list"></div>
+      </div>
+    </div>
   </div>
 
   <script src="marked.min.js"></script>
-  <script src="app.js?v=0.7.39"></script>
+  <script src="vendor/pdf.min.js"></script>
+  <script src="app.js?v=0.7.38"></script>
 </body>
 </html>
