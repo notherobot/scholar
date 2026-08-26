@@ -1,13 +1,16 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.7.38';
-const APP_VERSION_DATE = '2026-08-26T00:00:00Z';
+const APP_VERSION = 'v0.7.39';
+const APP_VERSION_DATE = '2026-08-26T00:30:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.7.39', date: '2026-08-26T00:30:00Z', notes: [
+    'Fixed API token not being sent when reconnecting after a disconnect — token field now syncs to state before attempting connection',
+  ] },
   { version: 'v0.7.38', date: '2026-08-26T00:00:00Z', notes: [
     'Streaming performance optimized: re-render interval increases with reply length to prevent browser slowdown on long responses',
     'Code blocks now render plain during streaming and highlight only after generation completes',
@@ -438,6 +441,11 @@ async function tryConnect(rawUrl) {
   if (!base) {
     showSetupError('Enter a URL');
     return false;
+  }
+
+  // Ensure API token from the setup field is synced to state before connecting
+  if (setupToken) {
+    state.apiToken = setupToken.value.trim();
   }
 
   setupConnect.disabled = true;
