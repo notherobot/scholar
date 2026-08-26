@@ -1,8 +1,151 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.7.7';
-const APP_VERSION_DATE = '2026-07-28';
+const APP_VERSION = 'v0.7.38';
+const APP_VERSION_DATE = '2026-08-26T00:00:00Z';
+
+// Changelog, newest first. Each entry is one shipped version: its release
+// timestamp and the user-facing notes for that bump. The header dropdown
+// shows the newest 3; the "View last 10 updates" modal shows the newest 10.
+const CHANGELOG = [
+  { version: 'v0.7.38', date: '2026-08-26T00:00:00Z', notes: [
+    'Streaming performance optimized: re-render interval increases with reply length to prevent browser slowdown on long responses',
+    'Code blocks now render plain during streaming and highlight only after generation completes',
+  ] },
+  { version: 'v0.7.37', date: '2026-08-12T10:00:00Z', notes: [
+    'Welcome message fades out over 100ms as soon as you start typing, instead of waiting for the message to send',
+    'iOS: the Chats panel now drags open/closed 1:1 with your finger instead of popping in once a threshold is crossed — matches native side-menu behavior, including a fast-flick shortcut',
+  ] },
+  { version: 'v0.7.36', date: '2026-08-12T09:00:00Z', notes: [
+    'Fixed a real crash cause during long streaming replies: code blocks were being fully re-syntax-highlighted from scratch on every single token update, since the DOM gets rebuilt each tick — for a long/growing code block that cost compounded for the whole generation. Code now renders plain while streaming and highlights once at the end',
+    'The streaming re-render interval now scales up as a reply grows, capping the worst-case cost instead of grinding the tab down on unusually long generations',
+  ] },
+  { version: 'v0.7.35', date: '2026-08-12T08:00:00Z', notes: [
+    'New "Data & Storage" section in Settings: shows this chat\'s message/image count and size, plus total storage across all saved chats',
+    'Long chats now load windowed to the most recent 50 messages by default (adjustable 10-300) instead of rendering the entire history at once — a banner offers "Load full chat" on demand',
+    'Added "Remove images from this chat" and "Clear all chat history" for reclaiming space',
+    'Fixed the composer turning into a stretched oval on multi-line input — its border-radius no longer scales with box height',
+  ] },
+  { version: 'v0.7.34', date: '2026-08-12T07:00:00Z', notes: [
+    'Raw LaTeX symbols some models emit (e.g. "$\\rightarrow$", "\\leq", "\\alpha") now render as their actual character (→, ≤, α) instead of literal source text',
+  ] },
+  { version: 'v0.7.33', date: '2026-08-12T06:00:00Z', notes: [
+    'Removed the built-in default system prompt — new devices now start with an empty one instead of the web-search instructions',
+  ] },
+  { version: 'v0.7.32', date: '2026-08-12T05:00:00Z', notes: [
+    'Fixed the Chats and Settings panels popping open instead of sliding — a generic display:none rule was overriding their slide transition',
+    'Both panels are wider on mobile (90vw, up from ~82vw)',
+    'Swipe from the left edge to open Chats, on iOS home-screen installs only (regular Safari keeps that gesture for back-navigation)',
+  ] },
+  { version: 'v0.7.31', date: '2026-08-12T04:00:00Z', notes: [
+    'Removed the thinking-hiding machinery entirely — messages always render exactly as the model sent them. Turn the Think toggle off in the composer if you don\'t want a model generating reasoning in the first place',
+    'Removed the now-unused "Collapse model thinking" setting',
+  ] },
+  { version: 'v0.7.30', date: '2026-08-12T03:00:00Z', notes: [
+    'Fixed a real performance bug: streaming re-rendered the entire message on every single token, which could bog down the tab on long replies — now throttled to ~15 updates/sec',
+    'Invented tool-call syntax that some models (like Gemma) leak as raw text is now swapped for a plain notice instead of showing the garbage pseudo-JSON',
+  ] },
+  { version: 'v0.7.29', date: '2026-08-12T02:00:00Z', notes: [
+    'Reasoning-hiding heuristics were mis-hiding real answer content — disabled for now, every message shows raw and unfiltered',
+  ] },
+  { version: 'v0.7.28', date: '2026-08-12T01:00:00Z', notes: [
+    'Catches another shape of untagged thinking: models (like Gemma) that narrate the request ("The user is asking...") before answering now have that narration hidden too',
+  ] },
+  { version: 'v0.7.27', date: '2026-08-12T00:00:00Z', notes: [
+    'Gemma is now the default model on startup if available',
+    'Thinking/reasoning blocks are now hidden from display — only the answer is shown',
+  ] },
+  { version: 'v0.7.26', date: '2026-08-08T02:00:00Z', notes: [
+    'Fixed Low effort toggle — LM Studio expects reasoning: {effort}, not a flat reasoning_effort field, so it was being silently ignored',
+  ] },
+  { version: 'v0.7.25', date: '2026-08-08T01:00:00Z', notes: [
+    'Composer gained Think and Low effort toggles — control reasoning per chat',
+  ] },
+  { version: 'v0.7.24', date: '2026-08-08T00:00:00Z', notes: [
+    'Prompts can be edited and resent — replaces that turn and everything after it',
+    'Copy button added to sent prompts (answers already had one)',
+  ] },
+  { version: 'v0.7.23', date: '2026-08-06T02:00:00Z', notes: [
+    'Model picker sorted smallest to largest by parameter count',
+  ] },
+  { version: 'v0.7.22', date: '2026-08-06T01:00:00Z', notes: [
+    'Model picker descriptions now recognize reasoning, agentic, and code-tuned models by name (e.g. Nemotron, R1, coder variants) instead of guessing from size alone',
+    'Composer reverted to a rounded pill text field, with the tool row kept underneath as a separate strip',
+  ] },
+  { version: 'v0.7.21', date: '2026-08-06T00:00:00Z', notes: [
+    'Model picker rebuilt as a proper list: shows what each model is best at, its context length, quantization, and vision support',
+    'Composer restyled Claude-style — attach and send buttons now sit in a row below the message box',
+  ] },
+  { version: 'v0.7.20', date: '2026-08-02T00:00:00Z', notes: [
+    'Default max-tokens raised from 2048 to 20000',
+  ] },
+  { version: 'v0.7.19', date: '2026-08-01T19:15:00Z', notes: [
+    'PDF uploads: text is extracted client-side (via pdf.js) and attached like a text file',
+    'Drag-and-drop and the attach button both route .pdf files through extraction',
+  ] },
+  { version: 'v0.7.18', date: '2026-07-31T23:30:00Z', notes: [
+    'Peak-2002 Aqua/Web-2.0 redesign: jelly pill buttons, brushed-metal header, glossy scrollbar',
+    'Buttons, inputs, and search boxes turned fully pill-shaped with candy-glass shine',
+    'Deeper bevels, glow rings, and glass sheens on cards, avatars, and panels',
+  ] },
+  { version: 'v0.7.17', date: '2026-07-31T23:05:00Z', notes: [
+    'Removed the triangle-mesh lattice background — kept just the Ko-Metru disc',
+  ] },
+  { version: 'v0.7.16', date: '2026-07-31T22:47:57Z', notes: [
+    'Triangle-mesh lattice redrawn as an SVG tile so vertices actually meet',
+    'Lattice and disc merged onto one background stack so the lattice is unambiguously behind it',
+    'Lattice re-oriented to horizontal lines with 60deg/120deg diagonals',
+  ] },
+  { version: 'v0.7.15', date: '2026-07-31T22:36:50Z', notes: [
+    'Faint triangle-mesh lattice added behind the Ko-Metru disc, echoing its facets',
+  ] },
+  { version: 'v0.7.14', date: '2026-07-31T22:29:03Z', notes: [
+    'Scholar-favicon avatar scaled down 20% and given a brighter navy backdrop',
+    'You avatar recolored to a saturated blue matching the site palette',
+  ] },
+  { version: 'v0.7.13', date: '2026-07-31T22:22:41Z', notes: [
+    'Changelog entries show release time, not just date',
+  ] },
+  { version: 'v0.7.12', date: '2026-07-31T22:21:46Z', notes: [
+    'Changelog now grouped by version with dates, plus a scrollable last-10 view',
+  ] },
+  { version: 'v0.7.11', date: '2026-07-31T18:44:08Z', notes: [
+    'AI avatar replaced with the Scholar favicon',
+    'Successful-but-failed tool calls show their result text',
+  ] },
+  { version: 'v0.7.10', date: '2026-07-31T18:18:53Z', notes: [
+    'Search + Visit Website wired in as the default on new devices',
+  ] },
+  { version: 'v0.7.9', date: '2026-07-31T18:08:26Z', notes: [
+    'LM Studio Hub plugins work as tool providers',
+  ] },
+  { version: 'v0.7.8', date: '2026-07-31T17:10:03Z', notes: [
+    'Tool calls show their name and arguments',
+    'Failed tool calls show the reason',
+    'Repeated tool calls flagged as a loop',
+  ] },
+  { version: 'v0.7.7', date: '2026-07-28T17:36:19Z', notes: [
+    'Favicon opacity fixed to 100%',
+  ] },
+  { version: 'v0.7.6', date: '2026-07-27T22:41:53Z', notes: [
+    'Connect errors show the exact URL tried',
+  ] },
+  { version: 'v0.7.5', date: '2026-07-27T22:34:59Z', notes: [
+    'Show/Hide toggle on token fields',
+  ] },
+  { version: 'v0.7.4', date: '2026-07-27T22:32:53Z', notes: [
+    'Setup screen token field styled to match the address field',
+  ] },
+  { version: 'v0.7.3', date: '2026-07-27T22:31:33Z', notes: [
+    'Port no longer forced to 1234',
+  ] },
+];
+
+// Built-in default for a device that has never saved settings. Stays fully
+// editable in Settings — this is only the starting value, not enforced.
+// See loadSettings.
+const DEFAULT_SYSTEM_PROMPT = '';
+const DEFAULT_MCP_SERVERS = 'danielsig/duckduckgo, danielsig/visit-website';
 
 // === State ===
 const state = {
@@ -13,7 +156,8 @@ const state = {
   abortController: null,
   currentModel: null,
   modelCaps: { vision: false },
-  modelMeta: {},          // { [modelId]: { type: 'llm'|'vlm'|... } } from /api/v0/models
+  modelMeta: {},          // { [modelId]: { type, publisher, quantization, maxContextLength, state } } from /api/v0/models
+  availableModels: [],    // raw /v1/models list, used to render the model picker
   lastLoadedModel: null,  // model that last actually produced output — drives the loading bar
   attachments: [],       // pending uploads: { kind:'image'|'file', name, size, url?, text? }
   sessions: [],          // saved chat sessions
@@ -24,7 +168,7 @@ const state = {
   // configured MCP servers attached as "plugin" integrations. LM Studio runs
   // the tool calls itself, so there's no client-side tool loop here.
   mcpEnabled: false,
-  mcpServers: 'playwright',  // comma-separated mcp.json server labels
+  mcpServers: DEFAULT_MCP_SERVERS,  // comma-separated mcp.json labels and/or "owner/name" Hub plugin ids
   // LM Studio API token. Optional in general, but *required* for MCP: LM Studio
   // only lets API clients touch mcp.json servers when "Require Authentication"
   // is on and the token carries Integration Access — those servers can reach
@@ -37,6 +181,19 @@ const state = {
   // whenever the conversation changes out from under it (new/loaded chat,
   // regenerate), which falls back to sending flattened history.
   mcpResponseId: null,
+  // Reasoning controls, sent as chat_template_kwargs.enable_thinking and
+  // reasoning_effort on every request. Models that don't support them just
+  // ignore the extra fields. See generateReply.
+  enableThinking: true,
+  lowEffort: false,
+  // How many of the most recent messages get rendered into the DOM when a
+  // chat is opened. Nothing is deleted — this only limits the expensive
+  // part (markdown parse + syntax highlight + DOM build) that makes long
+  // chats feel heavy to load. See renderCurrentMessages/loadFullChat.
+  messageLoadLimit: 50,
+  // True once the user has clicked "Load full chat" for the session that's
+  // currently open — resets on every new chat load (loadSession/newChat).
+  chatFullyLoaded: false,
 };
 
 // === DOM ===
@@ -54,6 +211,11 @@ const chatContainer  = $('#chat-container');
 const inputArea      = $('#input-area');
 const statusDot      = $('#status-indicator');
 const modelSelect    = $('#model-select');
+const modelPickerBtn   = $('#model-picker-btn');
+const modelPickerLabel = $('#model-picker-label');
+const modelModal       = $('#model-modal');
+const modelModalClose  = $('#model-modal-close');
+const modelPickerList  = $('#model-picker-list');
 const newChatBtn     = $('#new-chat-btn');
 
 const sidebarToggle  = $('#sidebar-toggle');
@@ -73,7 +235,11 @@ const tempValue      = $('#temp-value');
 const tokensSlider   = $('#max-tokens');
 const tokensValue    = $('#tokens-value');
 const streamToggle   = $('#stream-toggle');
-const collapseToggle = $('#collapse-toggle');
+const dataStatsText  = $('#data-stats-text');
+const messageLoadLimitSlider = $('#message-load-limit');
+const messageLoadLimitValue  = $('#message-load-limit-value');
+const stripImagesBtn = $('#strip-images-btn');
+const clearAllChatsBtn = $('#clear-all-chats-btn');
 
 const messagesEl     = $('#messages');
 const welcome        = $('#welcome');
@@ -85,6 +251,8 @@ const attachFileBtn  = $('#attach-file-btn');
 const fileInput      = $('#file-input');
 const attachmentsEl  = $('#attachments');
 const mcpIndicator   = $('#mcp-indicator');
+const thinkingToggleBtn   = $('#thinking-toggle-btn');
+const lowEffortToggleBtn  = $('#low-effort-toggle-btn');
 
 const historyBtn     = $('#history-btn');
 const historyPanel   = $('#history-panel');
@@ -98,6 +266,11 @@ const scrollPill     = $('#scroll-pill');
 
 const versionBtn     = $('#version-btn');
 const versionDropdown = $('#version-dropdown');
+const versionListRecent = $('#version-list-recent');
+const changelogViewAll = $('#changelog-view-all');
+const changelogModal   = $('#changelog-modal');
+const changelogClose   = $('#changelog-close');
+const changelogModalList = $('#changelog-modal-list');
 const composerEl     = $('.composer');
 
 // === Init ===
@@ -111,9 +284,11 @@ function init() {
       el.innerHTML = `${escapeHtml(APP_VERSION)} <span class="version-date">· ${escapeHtml(formatVersionDate(APP_VERSION_DATE))}</span>`;
     }
   });
+  renderChangelog();
   loadSettings();
   loadSessions();
   setupListeners();
+  updateDataStats();
 
   // If we have a saved URL, skip setup and connect
   const savedUrl = localStorage.getItem('lmstudio-server-url');
@@ -126,27 +301,36 @@ function init() {
 }
 
 // === Settings ===
+// Applies the built-in defaults (DEFAULT_SYSTEM_PROMPT, DEFAULT_MCP_SERVERS)
+// to a fresh device, then layers this device's saved settings on top —
+// `??` so an explicitly-cleared field (saved as '') stays cleared, while a
+// field that was never saved at all falls through to the default.
 function loadSettings() {
+  let s = {};
   const saved = localStorage.getItem('lmstudio-chat-settings');
-  if (!saved) return;
-  try {
-    const s = JSON.parse(saved);
-    systemPrompt.value = s.systemPrompt || '';
-    tempSlider.value = s.temperature ?? 0.7;
-    tokensSlider.value = s.maxTokens ?? 2048;
-    streamToggle.checked = s.stream ?? true;
-    collapseToggle.checked = s.collapseThinking ?? true;
-    tempValue.textContent = tempSlider.value;
-    tokensValue.textContent = tokensSlider.value;
-    state.mcpEnabled = s.mcpEnabled ?? false;
-    state.mcpServers = s.mcpServers ?? 'playwright';
-    state.apiToken = s.apiToken ?? '';
-    if (mcpToggle) mcpToggle.checked = state.mcpEnabled;
-    if (mcpServersInput) mcpServersInput.value = state.mcpServers;
-    if (apiTokenInput) apiTokenInput.value = state.apiToken;
-    if (setupToken) setupToken.value = state.apiToken;
-    updateMcpUI();
-  } catch(e) { /* ignore */ }
+  if (saved) {
+    try { s = JSON.parse(saved); } catch(e) { /* ignore */ }
+  }
+  systemPrompt.value = s.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
+  tempSlider.value = s.temperature ?? 0.7;
+  tokensSlider.value = s.maxTokens ?? 2048;
+  streamToggle.checked = s.stream ?? true;
+  tempValue.textContent = tempSlider.value;
+  tokensValue.textContent = tokensSlider.value;
+  state.mcpEnabled = s.mcpEnabled ?? false;
+  state.mcpServers = s.mcpServers ?? DEFAULT_MCP_SERVERS;
+  state.apiToken = s.apiToken ?? '';
+  state.enableThinking = s.enableThinking ?? true;
+  state.lowEffort = s.lowEffort ?? false;
+  state.messageLoadLimit = s.messageLoadLimit ?? 50;
+  if (mcpToggle) mcpToggle.checked = state.mcpEnabled;
+  if (mcpServersInput) mcpServersInput.value = state.mcpServers;
+  if (apiTokenInput) apiTokenInput.value = state.apiToken;
+  if (setupToken) setupToken.value = state.apiToken;
+  if (messageLoadLimitSlider) messageLoadLimitSlider.value = state.messageLoadLimit;
+  if (messageLoadLimitValue) messageLoadLimitValue.textContent = state.messageLoadLimit;
+  updateMcpUI();
+  updateReasoningToggleUI();
 }
 
 function saveSettings() {
@@ -155,11 +339,33 @@ function saveSettings() {
     temperature: parseFloat(tempSlider.value),
     maxTokens: parseInt(tokensSlider.value),
     stream: streamToggle.checked,
-    collapseThinking: collapseToggle.checked,
     mcpEnabled: state.mcpEnabled,
     mcpServers: state.mcpServers,
     apiToken: state.apiToken,
+    enableThinking: state.enableThinking,
+    lowEffort: state.lowEffort,
+    messageLoadLimit: state.messageLoadLimit,
   }));
+}
+
+// Reflects state.enableThinking / state.lowEffort on the composer's toggle
+// buttons — active styling, aria-pressed, and a hover title describing what
+// clicking it will do.
+function updateReasoningToggleUI() {
+  if (thinkingToggleBtn) {
+    thinkingToggleBtn.classList.toggle('active', state.enableThinking);
+    thinkingToggleBtn.setAttribute('aria-pressed', String(state.enableThinking));
+    thinkingToggleBtn.title = state.enableThinking
+      ? 'Model thinking: on — click to turn off'
+      : 'Model thinking: off — click to turn on';
+  }
+  if (lowEffortToggleBtn) {
+    lowEffortToggleBtn.classList.toggle('active', state.lowEffort);
+    lowEffortToggleBtn.setAttribute('aria-pressed', String(state.lowEffort));
+    lowEffortToggleBtn.title = state.lowEffort
+      ? 'Reasoning effort: low — click for normal'
+      : 'Reasoning effort: normal — click for low';
+  }
 }
 
 // LM Studio accepts `Authorization: Bearer <token>` once "Require
@@ -199,18 +405,28 @@ async function connect() {
     const data = await resp.json();
     state.connected = true;
 
-    const models = data.data || [];
+    const models = (data.data || []).slice().sort((a, b) => {
+      const wa = modelSortWeight(a.id), wb = modelSortWeight(b.id);
+      if (wa !== wb) return wa - wb;
+      return prettyModelName(a.id).localeCompare(prettyModelName(b.id));
+    });
+    state.availableModels = models;
     populateModelDropdown(models);
     await refreshModelMeta();
     refreshModelCaps();
+    renderModelPicker();
+    syncModelPickerLabel();
 
     setStatus('connected');
     updateSendBtn();
   } catch (err) {
     setStatus('disconnected');
     state.connected = false;
+    state.availableModels = [];
     modelSelect.innerHTML = '<option value="">Offline</option>';
     modelSelect.disabled = true;
+    modelPickerBtn.disabled = true;
+    modelPickerLabel.textContent = 'Offline';
     state.modelCaps.vision = false;
     // Retry silently
     setTimeout(connect, 5000);
@@ -298,6 +514,10 @@ function showSetup() {
   setStatus('disconnected');
   modelSelect.innerHTML = '<option value="">Offline</option>';
   modelSelect.disabled = true;
+  modelPickerBtn.disabled = true;
+  modelPickerLabel.textContent = 'Offline';
+  state.availableModels = [];
+  modelPickerList.innerHTML = '';
   messagesEl.innerHTML = '';
   if (welcome) messagesEl.appendChild(welcome);
   showWelcome(true);
@@ -316,12 +536,23 @@ function showSetup() {
 // overflow while it's showing — otherwise a stray touch there triggers an
 // elastic rubber-band bounce with no content backing it.
 function showWelcome(visible) {
-  if (welcome) welcome.style.display = visible ? '' : 'none';
+  if (welcome) {
+    welcome.style.display = visible ? '' : 'none';
+    if (visible) welcome.classList.remove('fade-out');
+  }
   chatContainer.classList.toggle('chat-empty', visible);
 }
 
 function hideWelcome() {
   showWelcome(false);
+}
+
+// Fades the welcome message out the moment the user starts typing, ahead of
+// it actually being hidden (display:none) once the message sends. Reverses
+// if they clear the draft back to empty.
+function updateWelcomeFade() {
+  if (!welcome) return;
+  welcome.classList.toggle('fade-out', userInput.value.trim().length > 0);
 }
 
 function addMessage(role, content, isError) {
@@ -331,7 +562,14 @@ function addMessage(role, content, isError) {
 
   const avatar = document.createElement('div');
   avatar.className = 'avatar';
-  avatar.textContent = role === 'user' ? 'You' : 'AI';
+  if (role === 'user') {
+    avatar.textContent = 'You';
+  } else {
+    const faviconImg = document.createElement('img');
+    faviconImg.src = 'Scholar_favicon_32.png';
+    faviconImg.alt = 'Scholar';
+    avatar.appendChild(faviconImg);
+  }
 
   const body = document.createElement('div');
   body.className = 'message-body';
@@ -357,7 +595,10 @@ function addMessage(role, content, isError) {
   return bubble;
 }
 
-function addUserMessage(text, attachments) {
+// `index` is this message's position in state.messages — needed so Edit can
+// truncate the conversation from the right point and resend. Callers that
+// don't have one to give (none currently) can omit it and Edit is skipped.
+function addUserMessage(text, attachments, index) {
   hideWelcome();
   const wrap = document.createElement('div');
   wrap.className = 'message user';
@@ -405,11 +646,13 @@ function addUserMessage(text, attachments) {
   wrap.appendChild(avatar);
   wrap.appendChild(body);
   messagesEl.appendChild(wrap);
+  addUserMessageActions(body, wrap, bubble, text, attachments || [], index);
   scrollToBottom();
 }
 
 // Render a stored message (from a loaded session) back into the chat.
-function renderStoredMessage(msg) {
+// `index` comes from state.messages.forEach, which passes it automatically.
+function renderStoredMessage(msg, index) {
   if (msg.role === 'assistant') {
     addMessage('assistant', typeof msg.content === 'string' ? msg.content : extractText(msg.content));
     return;
@@ -424,7 +667,115 @@ function renderStoredMessage(msg) {
       else if (part.type === 'image_url') attachments.push({ kind: 'image', name: 'image', url: part.image_url?.url });
     });
   }
-  addUserMessage(text, attachments);
+  addUserMessage(text, attachments, index);
+}
+
+// Rebuilds #messages from state.messages, windowed to the most recent
+// messageLoadLimit unless the user has already asked to see everything for
+// this chat (state.chatFullyLoaded). Rendering every message in a long chat
+// — each one a markdown parse + syntax highlight + DOM build — is what makes
+// opening it feel heavy; this keeps that cost bounded by default.
+function renderCurrentMessages() {
+  messagesEl.innerHTML = '';
+  if (welcome) messagesEl.appendChild(welcome);
+  showWelcome(state.messages.length === 0);
+
+  const total = state.messages.length;
+  const limit = state.messageLoadLimit;
+  const truncated = !state.chatFullyLoaded && limit > 0 && total > limit;
+  const startIdx = truncated ? total - limit : 0;
+
+  if (truncated) messagesEl.appendChild(buildTruncatedBanner(total, limit));
+  for (let i = startIdx; i < total; i++) renderStoredMessage(state.messages[i], i);
+
+  updateDataStats();
+}
+
+function buildTruncatedBanner(total, limit) {
+  const banner = document.createElement('div');
+  banner.className = 'truncated-banner';
+  const span = document.createElement('span');
+  span.textContent = `Showing last ${limit} of ${total} messages`;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn-sm';
+  btn.textContent = 'Load full chat';
+  btn.addEventListener('click', loadFullChat);
+  banner.appendChild(span);
+  banner.appendChild(btn);
+  return banner;
+}
+
+function loadFullChat() {
+  state.chatFullyLoaded = true;
+  renderCurrentMessages();
+  scrollToBottom(true);
+}
+
+// Drops every image attachment from the currently open chat's stored
+// messages (text and files are untouched) and re-renders. This is the big
+// lever for chats that got heavy from image uploads — those data URLs live
+// entirely in localStorage/memory, not on a server.
+function stripImagesFromCurrentChat() {
+  if (!state.messages.length) return 0;
+  let removed = 0;
+  state.messages.forEach(m => {
+    if (!Array.isArray(m.content)) return;
+    const before = m.content.length;
+    m.content = m.content.filter(p => p.type !== 'image_url');
+    removed += before - m.content.length;
+    // Collapse back to a plain string once there's nothing left to justify
+    // the array form — matches how a text-only message is normally stored.
+    if (m.content.length === 1 && m.content[0].type === 'text') m.content = m.content[0].text;
+    else if (m.content.length === 0) m.content = '';
+  });
+  if (removed > 0) {
+    saveCurrentSession();
+    renderCurrentMessages();
+  }
+  return removed;
+}
+
+function clearAllChats() {
+  if (!state.sessions.length) return;
+  if (!confirm(`Delete all ${state.sessions.length} saved chat${state.sessions.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
+  state.sessions = [];
+  persistSessions();
+  newChat();
+}
+
+function estimateBytes(obj) {
+  const json = JSON.stringify(obj) || '';
+  try { return new Blob([json]).size; } catch (e) { return json.length; }
+}
+
+function formatBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1024 / 1024).toFixed(2) + ' MB';
+}
+
+// Populates the "Data & Storage" readout in Settings: this chat's message/
+// image count and size, plus the total across every saved chat in this
+// browser. Called whenever messages or sessions change.
+function updateDataStats() {
+  if (!dataStatsText) return;
+  const msgCount = state.messages.length;
+  let imgCount = 0;
+  state.messages.forEach(m => {
+    if (Array.isArray(m.content)) imgCount += m.content.filter(p => p.type === 'image_url').length;
+  });
+  const chatBytes = estimateBytes(state.messages);
+  const totalBytes = estimateBytes(state.sessions);
+
+  if (msgCount === 0) {
+    dataStatsText.textContent = `${state.sessions.length} saved chat${state.sessions.length === 1 ? '' : 's'} · ~${formatBytes(totalBytes)} in this browser`;
+    return;
+  }
+  const imgPart = imgCount ? `, ${imgCount} image${imgCount === 1 ? '' : 's'}` : '';
+  dataStatsText.innerHTML =
+    `This chat: ${msgCount} message${msgCount === 1 ? '' : 's'}${imgPart} · ~${formatBytes(chatBytes)}<br>` +
+    `All chats: ${state.sessions.length} saved · ~${formatBytes(totalBytes)} in this browser`;
 }
 
 function addModelDivider(text) {
@@ -440,6 +791,7 @@ function addModelDivider(text) {
 
 function onModelChange() {
   const selected = modelSelect.value;
+  syncModelPickerLabel();
   if (!selected || selected === state.currentModel) return;
   state.currentModel = selected;
   // Switching models invalidates the server-side MCP thread — the next turn
@@ -530,17 +882,27 @@ function activeModelId() {
 }
 
 // === MCP (Model Context Protocol) ===
-// LM Studio exposes MCP servers configured in its mcp.json as "plugin"
-// integrations on its native /api/v1/chat endpoint. That endpoint speaks a
-// different dialect than the OpenAI-compatible one Scholar uses by default
-// (named SSE events, `input` instead of `messages`, server-side threading),
-// so MCP chats take a separate request/parse path — see generateReply.
+// LM Studio exposes tool providers as "plugin" integrations on its native
+// /api/v1/chat endpoint. That endpoint speaks a different dialect than the
+// OpenAI-compatible one Scholar uses by default (named SSE events, `input`
+// instead of `messages`, server-side threading), so MCP chats take a separate
+// request/parse path — see generateReply.
 //
 // LM Studio executes the tool calls itself and streams the results back, so
 // there's no client-side tool-execution loop to implement here.
 
-// Parses the comma-separated server list into `integrations` entries.
-// "playwright, fetch" -> [{type:'plugin', id:'mcp/playwright'}, ...]
+// Parses the comma-separated integration list into `integrations` entries.
+//
+// Two kinds of plugin id exist and they live in different namespaces:
+//   - servers from LM Studio's mcp.json  -> "mcp/<server_label>"
+//   - plugins installed from the LM Studio Hub -> "<owner>/<name>"
+// A bare label is taken as an mcp.json server (the common case) and gets the
+// "mcp/" prefix; anything already carrying a "/" is passed through untouched,
+// so hub plugins like "danielsig/duckduckgo" aren't mangled into
+// "mcp/danielsig/duckduckgo", which resolves to nothing.
+//
+// "playwright, danielsig/duckduckgo"
+//   -> [{type:'plugin', id:'mcp/playwright'}, {type:'plugin', id:'danielsig/duckduckgo'}]
 function mcpIntegrations() {
   return String(state.mcpServers || '')
     .split(',')
@@ -548,7 +910,7 @@ function mcpIntegrations() {
     .filter(Boolean)
     .map(label => ({
       type: 'plugin',
-      id: label.startsWith('mcp/') ? label : 'mcp/' + label,
+      id: label.includes('/') ? label : 'mcp/' + label,
     }));
 }
 
@@ -636,15 +998,18 @@ function titleCaseSlug(slug) {
 
 // (Re)build the model dropdown from the models LM Studio reports, preserving
 // the current selection where possible so a reconnect doesn't silently switch
-// the active model.
+// the active model. If no previous selection exists, try to default to Gemma.
 function populateModelDropdown(lmModels) {
   const prevValue = modelSelect.value;
 
   modelSelect.innerHTML = '';
   modelSelect.disabled = false;
+  modelPickerBtn.disabled = false;
 
   if (lmModels.length === 0) {
     modelSelect.innerHTML = '<option value="">No models loaded</option>';
+    modelPickerBtn.disabled = true;
+    modelPickerLabel.textContent = 'No models loaded';
     return;
   }
 
@@ -658,19 +1023,34 @@ function populateModelDropdown(lmModels) {
 
   if ([...modelSelect.options].some(o => o.value === prevValue)) {
     modelSelect.value = prevValue;
+  } else {
+    // No previous selection; try to default to Gemma if available
+    const gemmaModel = lmModels.find(m => m.id.toLowerCase().includes('gemma'));
+    if (gemmaModel) {
+      modelSelect.value = gemmaModel.id;
+    }
   }
   state.currentModel = modelSelect.value || null;
 }
 
-// Fetch type info ("llm" / "vlm" / ...) for every downloaded model in one shot,
-// via LM Studio's native API. Powers both capability detection and routing.
+// Fetch type/publisher/quantization/context info for every downloaded model
+// in one shot, via LM Studio's native API. Powers capability detection,
+// routing, and the informative model picker.
 async function refreshModelMeta() {
   try {
     const resp = await fetch(state.apiBase + '/api/v0/models', { headers: authHeaders(), signal: AbortSignal.timeout(4000) });
     if (resp.ok) {
       const data = await resp.json();
       const meta = {};
-      (data.data || []).forEach(m => { meta[m.id] = { type: (m.type || '').toLowerCase() }; });
+      (data.data || []).forEach(m => {
+        meta[m.id] = {
+          type: (m.type || '').toLowerCase(),
+          publisher: m.publisher || '',
+          quantization: m.quantization || '',
+          maxContextLength: m.max_context_length || null,
+          state: m.state || '',
+        };
+      });
       state.modelMeta = meta;
     }
   } catch (e) { /* endpoint unavailable — routing/caps fall back to name heuristics */ }
@@ -678,6 +1058,148 @@ async function refreshModelMeta() {
 
 function modelType(id) {
   return state.modelMeta[id]?.type || (nameSuggestsVision(id) ? 'vlm' : '');
+}
+
+// Pull a parameter count (in billions) out of a model id/slug, e.g.
+// "qwen2.5-7b-instruct" -> 7, "mixtral-8x7b" -> 56. Falls back to the same
+// family overrides prettyModelName uses for slugs with no size token at all.
+function modelSizeBillions(id) {
+  if (!id) return null;
+  const slug = id.includes('/') ? id.slice(id.indexOf('/') + 1) : id;
+  for (const t of slug.split(/[-_]/).filter(Boolean)) {
+    const m = /^(?:(\d+)x)?(\d+(?:\.\d+)?)b$/i.exec(t);
+    if (m) return (m[1] ? parseInt(m[1], 10) : 1) * parseFloat(m[2]);
+  }
+  const override = MODEL_SIZE_OVERRIDES.find(([re]) => re.test(slug));
+  const m = override && /(\d+(?:\.\d+)?)B/i.exec(override[1]);
+  return m ? parseFloat(m[1]) : null;
+}
+
+// Sort key for the model list/picker (smallest to largest). Falls back to
+// qualitative size branding (e.g. "nano"/"super"/"ultra") when no parameter
+// count can be parsed, and to the very end for names with no size signal at
+// all — those sort alphabetically among themselves.
+function modelSortWeight(id) {
+  const b = modelSizeBillions(id);
+  if (b != null) return b;
+  const slug = (id || '').toLowerCase();
+  if (/\b(nano|mini|tiny)\b/.test(slug)) return 3;
+  if (/\bsmall\b/.test(slug)) return 8;
+  if (/\b(medium|mid)\b/.test(slug)) return 20;
+  if (/\b(super|large|xl)\b/.test(slug)) return 60;
+  if (/\b(ultra|xxl)\b/.test(slug)) return 200;
+  return Infinity;
+}
+
+// A model's actual purpose (reasoning-tuned, code-tuned, etc.) is a far
+// better signal than its raw parameter count — checked first, before falling
+// back to a size-based guess. Order matters: most specific families first.
+const MODEL_SPECIALTY_HINTS = [
+  [/nemotron/i, 'Reasoning & agentic — built for tool use and long multi-step tasks'],
+  [/deepseek-r1|magistral|\bqwq\b|reasoner|-think(?:ing)?\b/i, 'Deep reasoning — thinks step-by-step, slower but more thorough'],
+  [/coder?|codestral|starcoder|codegemma/i, 'Code-focused — best for programming tasks'],
+  [/\bembed(?:ding)?\b/i, 'Embedding model — for search/retrieval, not chat'],
+];
+
+// Qualitative size branding (e.g. NVIDIA's Nemotron Nano/Super/Ultra tiers)
+// used only when no numeric parameter count can be parsed from the name.
+const MODEL_TIER_HINTS = [
+  [/\b(ultra|xxl)\b/i, 'Most capable — for your toughest challenges'],
+  [/\b(super|large|\bxl\b)\b/i, 'Strong reasoning — for complex tasks'],
+  [/\b(medium|mid)\b/i, 'Balanced — good for everyday tasks'],
+  [/\b(nano|mini|tiny|small)\b/i, 'Fastest — great for quick answers'],
+];
+
+// A short, honest "what's this for" line, in the spirit of Claude's model
+// picker — derived from the model's stated purpose or parameter count, since
+// local models don't come with an official tier of their own.
+function modelTaskBlurb(id) {
+  const slug = (id || '').toLowerCase();
+
+  const specialty = MODEL_SPECIALTY_HINTS.find(([re]) => re.test(slug));
+  if (specialty) return specialty[1];
+
+  const b = modelSizeBillions(id);
+  if (b != null) {
+    if (b < 4) return 'Fastest — great for quick answers';
+    if (b < 15) return 'Balanced — good for everyday tasks';
+    if (b < 35) return 'Strong reasoning — for complex tasks';
+    return 'Most capable — for your toughest challenges';
+  }
+
+  const tier = MODEL_TIER_HINTS.find(([re]) => re.test(slug));
+  if (tier) return tier[1];
+
+  return 'General purpose';
+}
+
+function formatContextLength(n) {
+  if (!n) return null;
+  if (n >= 1000000) return (n % 1000000 === 0 ? n / 1000000 : (n / 1000000).toFixed(1)) + 'M context';
+  if (n >= 1000) return Math.round(n / 1000) + 'K context';
+  return n + ' context';
+}
+
+function syncModelPickerLabel() {
+  if (!modelPickerLabel) return;
+  const id = modelSelect.value;
+  modelPickerLabel.textContent = id ? prettyModelName(id) : (modelSelect.options[0]?.textContent || 'No models');
+}
+
+function selectModelFromPicker(id) {
+  if (modelSelect.value === id) { closeModelPicker(); return; }
+  modelSelect.value = id;
+  modelSelect.dispatchEvent(new Event('change'));
+  syncModelPickerLabel();
+  closeModelPicker();
+}
+
+function openModelPicker() {
+  if (modelPickerBtn.disabled) return;
+  renderModelPicker();
+  modelModal.classList.remove('hidden');
+}
+
+function closeModelPicker() {
+  modelModal.classList.add('hidden');
+}
+
+// Builds the informative model-picker list from state.availableModels +
+// whatever richer metadata refreshModelMeta was able to fetch.
+function renderModelPicker() {
+  if (!modelPickerList) return;
+  const models = state.availableModels;
+
+  if (!models.length) {
+    modelPickerList.innerHTML = '<p class="model-picker-empty">No models loaded in LM Studio.</p>';
+    return;
+  }
+
+  const selected = modelSelect.value;
+  modelPickerList.innerHTML = models.map(m => {
+    const meta = state.modelMeta[m.id] || {};
+    const vision = modelType(m.id) === 'vlm';
+    const tags = [];
+    if (vision) tags.push('Vision');
+    const ctx = formatContextLength(meta.maxContextLength);
+    if (ctx) tags.push(ctx);
+    if (meta.quantization) tags.push(meta.quantization);
+    if (meta.state === 'loaded') tags.push('Loaded');
+
+    const isSelected = m.id === selected;
+    return `<button type="button" class="model-picker-item${isSelected ? ' selected' : ''}" data-model-id="${escapeHtml(m.id)}" title="${escapeHtml(m.id)}">
+      <div class="model-picker-item-main">
+        <div class="model-picker-name">${escapeHtml(prettyModelName(m.id))}</div>
+        <div class="model-picker-blurb">${escapeHtml(modelTaskBlurb(m.id))}</div>
+        ${tags.length ? `<div class="model-picker-meta">${tags.map(t => `<span class="model-picker-tag">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+      </div>
+      ${isSelected ? '<span class="model-picker-check"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></span>' : ''}
+    </button>`;
+  }).join('');
+
+  modelPickerList.querySelectorAll('.model-picker-item').forEach(btn => {
+    btn.addEventListener('click', () => selectModelFromPicker(btn.dataset.modelId));
+  });
 }
 
 // Detect capabilities of the active model.
@@ -699,9 +1221,45 @@ function escapeHtml(text) {
 }
 
 function formatVersionDate(iso) {
-  const d = new Date(iso + 'T00:00:00');
+  // Accepts either a bare date ('2026-07-31') or a full timestamp
+  // ('2026-07-31T22:22:41Z'); only the latter gets a time appended.
+  const hasTime = /T\d{2}:\d{2}/.test(iso);
+  const d = new Date(hasTime ? iso : iso + 'T00:00:00');
   if (isNaN(d)) return iso;
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  const dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  if (!hasTime) return dateStr;
+  const timeStr = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return `${dateStr}, ${timeStr}`;
+}
+
+function changelogEntryHTML(entry) {
+  const notes = entry.notes.map(n => `<li>${escapeHtml(n)}</li>`).join('');
+  return `<div class="version-block">
+    <div class="version-header">${escapeHtml(entry.version)} <span class="version-date">· ${escapeHtml(formatVersionDate(entry.date))}</span></div>
+    <ul class="version-list">${notes}</ul>
+  </div>`;
+}
+
+function renderChangelog() {
+  if (versionListRecent) {
+    versionListRecent.innerHTML = CHANGELOG.slice(0, 3)
+      .map((entry, i) => (i > 0 ? '<hr class="version-sep">' : '') + changelogEntryHTML(entry))
+      .join('');
+  }
+  if (changelogModalList) {
+    changelogModalList.innerHTML = CHANGELOG.slice(0, 10)
+      .map((entry, i) => (i > 0 ? '<hr class="version-sep">' : '') + changelogEntryHTML(entry))
+      .join('');
+  }
+}
+
+function openChangelogModal() {
+  versionDropdown.classList.add('hidden');
+  changelogModal.classList.remove('hidden');
+}
+
+function closeChangelogModal() {
+  changelogModal.classList.add('hidden');
 }
 
 function modelLoadingHTML(modelId) {
@@ -711,222 +1269,97 @@ function modelLoadingHTML(modelId) {
   </div>`;
 }
 
+// Scholar has no real math renderer (no KaTeX/MathJax), so raw LaTeX that
+// models emit — Gemma especially likes wrapping arrows/operators in $…$ —
+// shows up completely literally, e.g. "$\rightarrow$" instead of "→". Swap
+// the common no-argument symbol commands for their Unicode characters and
+// drop the math delimiters, so at least simple inline math reads cleanly.
+// This is a text substitution, not a real parser — full expressions
+// (fractions, matrices, integrals with bounds, etc.) are out of scope.
+const LATEX_SYMBOLS = {
+  rightarrow: '→', to: '→', longrightarrow: '⟶', implies: '⟹', Rightarrow: '⇒',
+  leftarrow: '←', gets: '←', longleftarrow: '⟵', Leftarrow: '⇐',
+  leftrightarrow: '↔', longleftrightarrow: '⟷', Leftrightarrow: '⇔', iff: '⟺',
+  uparrow: '↑', downarrow: '↓', mapsto: '↦',
+  times: '×', div: '÷', pm: '±', mp: '∓', cdot: '⋅', ast: '∗', star: '★',
+  leq: '≤', le: '≤', geq: '≥', ge: '≥', neq: '≠', ne: '≠', approx: '≈',
+  equiv: '≡', sim: '∼', simeq: '≃', cong: '≅', propto: '∝', ll: '≪', gg: '≫',
+  infty: '∞', partial: '∂', nabla: '∇', hbar: 'ℏ', ell: 'ℓ', Re: 'ℜ', Im: 'ℑ',
+  forall: '∀', exists: '∃', nexists: '∄', emptyset: '∅', varnothing: '∅',
+  in: '∈', notin: '∉', ni: '∋', subset: '⊂', subseteq: '⊆', supset: '⊃',
+  supseteq: '⊇', cup: '∪', cap: '∩', setminus: '∖', wedge: '∧', vee: '∨',
+  neg: '¬', oplus: '⊕', otimes: '⊗', perp: '⊥', parallel: '∥', angle: '∠',
+  triangle: '△', square: '□', circ: '∘', bullet: '•', degree: '°',
+  therefore: '∴', because: '∵', sum: '∑', prod: '∏', int: '∫', oint: '∮',
+  ldots: '…', cdots: '⋯', vdots: '⋮', ddots: '⋱', dagger: '†', ddagger: '‡',
+  alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ε', varepsilon: 'ε',
+  zeta: 'ζ', eta: 'η', theta: 'θ', vartheta: 'ϑ', iota: 'ι', kappa: 'κ',
+  lambda: 'λ', mu: 'μ', nu: 'ν', xi: 'ξ', omicron: 'ο', pi: 'π', varpi: 'ϖ',
+  rho: 'ρ', sigma: 'σ', varsigma: 'ς', tau: 'τ', upsilon: 'υ', phi: 'φ',
+  varphi: 'ϕ', chi: 'χ', psi: 'ψ', omega: 'ω',
+  Alpha: 'Α', Beta: 'Β', Gamma: 'Γ', Delta: 'Δ', Epsilon: 'Ε', Zeta: 'Ζ',
+  Eta: 'Η', Theta: 'Θ', Iota: 'Ι', Kappa: 'Κ', Lambda: 'Λ', Mu: 'Μ', Nu: 'Ν',
+  Xi: 'Ξ', Omicron: 'Ο', Pi: 'Π', Rho: 'Ρ', Sigma: 'Σ', Tau: 'Τ',
+  Upsilon: 'Υ', Phi: 'Φ', Chi: 'Χ', Psi: 'Ψ', Omega: 'Ω',
+};
+const LATEX_SYMBOL_RE = /\\([A-Za-z]+)/g;
+const substituteLatexSymbols = (s) => s
+  .replace(/\\text\{([^{}]*)\}/g, '$1')
+  .replace(/\\(?:mathbf|mathrm|mathit|mathcal|operatorname)\{([^{}]*)\}/g, '$1')
+  .replace(/\\sqrt\{([^{}]*)\}/g, '√($1)')
+  .replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, '($1)/($2)')
+  .replace(LATEX_SYMBOL_RE, (m, cmd) => LATEX_SYMBOLS[cmd] || m)
+  .replace(/\\,|\\;|\\ /g, ' ');
+
+// Runs the substitution above, plus drops now-redundant math delimiters
+// (\(...\), \[...\], $$...$$, and $...$ when it contains a LaTeX command —
+// bare "$" for currency is left alone). Skips fenced code blocks entirely so
+// shell/JS/etc. snippets with literal "$" or backslash escapes are untouched.
+function convertLatexSymbols(text) {
+  const parts = text.split(/(```[\s\S]*?```)/g);
+  return parts.map((part, i) => {
+    if (i % 2 === 1) return part; // fenced code block — leave verbatim
+    part = part
+      .replace(/\\\(([\s\S]*?)\\\)/g, (_, inner) => substituteLatexSymbols(inner))
+      .replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => substituteLatexSymbols(inner))
+      .replace(/\$\$([\s\S]*?)\$\$/g, (_, inner) => substituteLatexSymbols(inner))
+      .replace(/\$([^\n$]*\\[A-Za-z]+[^\n$]*)\$/g, (_, inner) => substituteLatexSymbols(inner));
+    // Catch-all: LaTeX commands emitted bare, with no $ / \( \) wrapping at
+    // all (Gemma does this too). Backslash-prefixed commands are unambiguous
+    // — never mistaken for currency — so this is safe outside delimiters too.
+    return substituteLatexSymbols(part);
+  }).join('');
+}
+
 function renderMarkdown(text) {
+  text = convertLatexSymbols(text);
   if (typeof marked !== 'undefined') {
     return marked.parse(text, { breaks: true });
   }
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
 }
 
-// Wrap reasoning ("thinking") in a collapsed <details> dropdown, leaving the
-// answer rendered normally. Handles <think>/<thinking> tags (including a
-// still-open block mid-stream) and un-tagged "thinking out loud" output.
-// Channel-token reasoning: some chat templates (gpt-oss/Harmony-style) leak
-// special tokens like "<|channel|>thought … <|channel|>final …" into the text.
-// Pipes are sometimes half-eaten by rendering, so match loosely (<|channel> too).
-const CHANNEL_THINK_RE = /<\|?channel\|?>\s*(?:thought|thinking|analysis)[^\S\n]*(?:<\|?message\|?>)?/i;
-const CHANNEL_FINAL_RE = /(?:<\|?start\|?>\s*(?:assistant)?\s*)?<\|?channel\|?>\s*(?:final|response|answer)[^\S\n]*(?:<\|?message\|?>)?/i;
+// Strips special chat-template tokens (e.g. gpt-oss/Harmony-style
+// "<|channel|>", "<|message|>") that some models leak into plain text. Used
+// for cleaning up auto-generated chat titles, where a stray token would
+// otherwise show up in the sidebar.
 const SPECIAL_TOKEN_RE = /<\|?(?:channel|message|start|end|return|im_start|im_end|endoftext|eot_id|assistant|system|developer)\|?>/gi;
 const stripSpecialTokens = (s) => s.replace(SPECIAL_TOKEN_RE, '');
 
-function renderMessage(text, streaming) {
-  if (collapseToggle && !collapseToggle.checked) return renderMarkdown(text);
+// Some models (seen on Gemma) invent their own tool-call syntax instead of
+// the one LM Studio's grammar constraint recognizes, so it never gets
+// intercepted as a real tool call — it just leaks into the reply as raw
+// pseudo-JSON, e.g. "<|toolcall>call:googlesearch:search{queries:[...]}".
+// Swap it for a plain notice instead of showing that text as if it were part
+// of the answer.
+const LEAKED_TOOLCALL_RE = /<\|?tool_?call\|?>\s*call:[\w.]+:[\w.]+\s*\{[\s\S]*?\}/gi;
+const stripLeakedToolcalls = (s) => s.replace(LEAKED_TOOLCALL_RE,
+  '*(model attempted a tool call in a format this LM Studio setup doesn\'t recognize — nothing ran)*');
 
-  // Channel-token reasoning (checked first — these also often contain lists
-  // that would confuse the freeform detector)
-  const chThink = text.match(CHANNEL_THINK_RE);
-  if (chThink) {
-    const pre = text.slice(0, chThink.index);
-    const afterThink = text.slice(chThink.index + chThink[0].length);
-    const chFinal = afterThink.match(CHANNEL_FINAL_RE);
-    let html = pre.trim() ? renderMarkdown(stripSpecialTokens(pre)) : '';
-    if (chFinal) {
-      const reasoning = stripSpecialTokens(afterThink.slice(0, chFinal.index));
-      const answer = stripSpecialTokens(afterThink.slice(chFinal.index + chFinal[0].length));
-      html += thinkBlock(reasoning, false);
-      if (answer.trim()) html += renderMarkdown(answer.trim());
-    } else {
-      // No final channel marker (yet). While streaming that's normal; once
-      // complete, try to find the answer inside. If none can be found, render
-      // the block EXPANDED — the answer may be trapped in there, and an open
-      // box beats a hidden answer.
-      const inner = stripSpecialTokens(afterThink);
-      const split = !streaming ? findAnswerBoundary(inner) : null;
-      if (split && split.answer.trim()) {
-        html += thinkBlock(split.reasoning, false);
-        html += renderMarkdown(split.answer.trim());
-      } else {
-        html += thinkBlock(inner, !!streaming, !streaming);
-      }
-    }
-    return html || renderMarkdown(stripSpecialTokens(text));
-  }
-
-  // Tag-delimited reasoning (<think>…</think>)
-  if (/<think(?:ing)?>/i.test(text)) {
-    const THINK_RE = /<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/gi;
-    const parts = []; // { type: 'md'|'think', text, open? }
-    let lastIndex = 0;
-    let m;
-    while ((m = THINK_RE.exec(text)) !== null) {
-      const before = text.slice(lastIndex, m.index);
-      if (before.trim()) parts.push({ type: 'md', text: before });
-      parts.push({ type: 'think', text: m[1] });
-      lastIndex = THINK_RE.lastIndex;
-    }
-    const rest = text.slice(lastIndex);
-    const openIdx = rest.search(/<think(?:ing)?>/i);
-    if (openIdx !== -1) {
-      const before = rest.slice(0, openIdx);
-      if (before.trim()) parts.push({ type: 'md', text: before });
-      parts.push({ type: 'think', text: rest.slice(openIdx).replace(/^<think(?:ing)?>/i, ''), open: true });
-    } else if (rest.trim()) {
-      parts.push({ type: 'md', text: rest });
-    }
-
-    // If the completed message is nothing but think content — either the tag
-    // never closed, or the reasoning parser swallowed the answer too (the
-    // telltale: answer glued on with no space after the last thought) — find
-    // the boundary inside the last block so the answer isn't trapped. When no
-    // boundary exists, render the block EXPANDED: the answer may be in there,
-    // and an open box beats a hidden answer.
-    if (!streaming) {
-      const last = parts[parts.length - 1];
-      const hasAnswerOutside = parts.some(p => p.type === 'md');
-      if (last && last.type === 'think' && !hasAnswerOutside) {
-        const split = findAnswerBoundary(last.text);
-        if (split && split.answer.trim()) {
-          last.text = split.reasoning;
-          parts.push({ type: 'md', text: split.answer });
-        } else {
-          last.forceOpen = true;
-        }
-      }
-    }
-
-    let html = '';
-    for (const p of parts) {
-      if (p.type === 'md') html += renderMarkdown(p.text.trim());
-      else html += thinkBlock(p.text, !!p.open && !!streaming, !!p.forceOpen);
-    }
-    return html || renderMarkdown(text);
-  }
-
-  // Un-tagged reasoning: models that "think out loud" in plain text
-  const ff = detectFreeformReasoning(text, streaming);
-  if (ff) {
-    let html = ff.reasoning.trim() ? thinkBlock(ff.reasoning, !!ff.streaming) : '';
-    if (ff.answer.trim()) html += renderMarkdown(ff.answer.trim());
-    return html || renderMarkdown(text);
-  }
-
-  return renderMarkdown(text);
-}
-
-// Some models emit their chain-of-thought as plain prose (no tags), opening with
-// a recognizable preamble and then producing the real answer. We only split at
-// high-confidence boundaries — guessing from prose structure proved unreliable
-// (it leaked reasoning and broke code fences), so when unsure we show raw.
-const REASON_PREAMBLE = /^(?:\s*(?:>|#{1,4})?\s*)?(?:okay[,]?\s+)?(here'?s\s+(?:a|my)\s+(?:thinking|thought|reasoning)(?:\s+process)?|(?:my\s+)?(?:thinking|thought)\s+process\b|reasoning\s*:|let'?s\s+think\b|let\s+me\s+think\b)/i;
-// A) Explicit final-answer heading/label — the answer is on the NEXT line(s).
-const ANSWER_HEADING = /^\s{0,3}(?:[-*]|\d+[.)])?\s*(?:#{1,4}\s*)?(?:\*\*)?\s*(?:final\s+response|final\s+answer|draft\s+response|my\s+(?:response|answer)|(?:response|answer|output|reply|solution)\s*:)\b[\s:.\-–—)*]*(.*)$/i;
-// B) Answer-opener phrase — the answer STARTS on this line (kept in the answer).
-const ANSWER_OPENER = /^\s{0,3}>?\s*(?:here'?s|here\s+is|below\s+is|this\s+is)\s+(?:the|my|a|an|your)\s+(?:updated|revised|final|fixed|corrected|complete|completed|new|working|refined|improved|full|cleaned[-\s]?up|reworked|modified)\b/i;
-// Markdown list/heading/quote/table starters. List markers require a trailing
-// space so bold text (**x**) and decimals (3.14) aren't mistaken for lists.
-const LISTY = /^(?:[-*]\s|>|\d+[.)]\s|#{1,6}\s|\|)/;
-
-// Close a dangling ``` fence so a split doesn't leak broken markdown.
-function balanceFences(s) {
-  const fences = (s.match(/```/g) || []).length;
-  return fences % 2 ? s + '\n```' : s;
-}
-
-// Find where reasoning ends and the answer begins inside a completed blob of
-// text. Used both for un-tagged "thinking out loud" output and for <think>
-// blocks that were never closed. Returns {reasoning, answer} or null.
-function findAnswerBoundary(text) {
-  const lines = text.split('\n');
-  let headingIdx = -1, inlineAnswer = '', openerIdx = -1;
-  for (let i = 0; i < lines.length; i++) {
-    const mm = lines[i].match(ANSWER_HEADING);
-    if (mm) {
-      headingIdx = i;
-      const trail = (mm[1] || '').trim();
-      inlineAnswer = (!trail || /^[([]/.test(trail) || trail.endsWith(':')) ? '' : trail;
-    }
-    if (ANSWER_OPENER.test(lines[i])) openerIdx = i;
-  }
-
-  // Prefer whichever boundary appears later in the message.
-  if (openerIdx >= 0 && openerIdx >= headingIdx) {
-    const reasoning = lines.slice(0, openerIdx).join('\n');
-    const answer = lines.slice(openerIdx).join('\n'); // opener line is part of the answer
-    if (answer.trim()) return { reasoning, answer };
-  }
-  if (headingIdx >= 0) {
-    const reasoning = lines.slice(0, headingIdx).join('\n');
-    const after = lines.slice(headingIdx + 1).join('\n');
-    const answer = (inlineAnswer ? inlineAnswer + '\n' : '') + after;
-    if (answer.trim()) return { reasoning, answer };
-  }
-
-  // C) Glued seam: a sentence end jammed directly against the start of a new
-  // sentence with no space ("…irrational number.The square root…",
-  // "…(January 2025).The CEO…"). That's the telltale of a template/parser
-  // concatenating reasoning and answer as separate generations. The sentence
-  // may end after letters, digits, closing brackets/quotes, or a percent
-  // sign, and the answer may start with a capitalized word, "I", or bold
-  // text. Split at the last such seam outside code fences.
-  const GLUE_RE = /(?:[a-z]{2}|\d|[)\]"”'’%])[.!?](?=[A-Z][a-z]|I\b)|(?:[a-z]{2}|\d|[)\]"”'’%])[.!?:](?=\*\*[A-Za-z0-9])/g;
-  let glueEnd = -1;
-  let g;
-  while ((g = GLUE_RE.exec(text)) !== null) {
-    const fences = (text.slice(0, g.index).match(/```/g) || []).length;
-    if (fences % 2 === 0) glueEnd = g.index + g[0].length; // ignore seams inside code
-  }
-  if (glueEnd > 0) {
-    const answer = text.slice(glueEnd);
-    if (answer.trim().length >= 8) return { reasoning: text.slice(0, glueEnd), answer };
-  }
-
-  // Narrow, safe structural rule: a single plain-prose block that directly
-  // follows a block of reasoning steps (a list) is the answer. This only fires
-  // for the clean "steps → answer" shape, never when prose meta precedes it.
-  const blocks = text.split(/\n\s*\n/);
-  let end = blocks.length - 1;
-  while (end >= 0 && !blocks[end].trim()) end--;
-  if (end >= 1) {
-    const last = blocks[end].trim();
-    const lastFirst = (last.split('\n')[0] || '').trim();
-    const prevFirst = (blocks[end - 1].trim().split('\n')[0] || '').trim();
-    const lastIsProse = !LISTY.test(lastFirst) && !lastFirst.startsWith('```');
-    if (lastIsProse && LISTY.test(prevFirst) && last.length >= 2) {
-      return { reasoning: blocks.slice(0, end).join('\n\n'), answer: last };
-    }
-  }
-
-  return null;
-}
-
-function detectFreeformReasoning(text, streaming) {
-  if (!REASON_PREAMBLE.test(text)) return null;
-
-  const found = findAnswerBoundary(text);
-  if (found) return found;
-
-  // Still streaming: keep it collapsed as "Thinking…" until the boundary arrives.
-  if (streaming) return { reasoning: text, answer: '', streaming: true };
-
-  // No confident boundary — don't collapse (never hide or mangle the answer).
-  return null;
-}
-
-function thinkBlock(inner, streaming, open) {
-  const trimmed = balanceFences(inner.trim());
-  const body = trimmed ? renderMarkdown(trimmed) : '<em>Thinking…</em>';
-  const label = streaming ? 'Thinking…' : 'Thought process';
-  return `<details class="think-block"${open ? ' open' : ''}><summary>${label}</summary><div class="think-content">${body}</div></details>`;
+// Model thinking/reasoning is never hidden — turn the Think toggle off in the
+// composer if you don't want a model to generate it in the first place.
+function renderMessage(text) {
+  return renderMarkdown(stripLeakedToolcalls(text));
 }
 
 // === Syntax highlighting (dependency-free) ===
@@ -977,12 +1410,21 @@ function codeLang(codeEl) {
 
 const looksLikeHtmlDoc = (t) => /^\s*(<!doctype html|<html)/i.test(t) || (/<\w+[^>]*>/.test(t) && /<\/(div|body|button|p|span|h\d|style|script)>/i.test(t));
 
-function addCopyButtons(el) {
+// `streaming` skips syntax highlighting entirely. Each mid-stream tick fully
+// replaces the message's innerHTML (see generateReply), so the freshly
+// re-created <code> element never actually carries the "already
+// highlighted" dataset flag forward — every tick was re-tokenizing the
+// *entire* code block from scratch, and for a long/growing block (a stuck
+// local model repeating itself well past a normal reply length is the
+// classic case) that cost compounds for the whole generation and can bog
+// the tab down badly enough to look like a crash. Code just renders as
+// plain (still monospaced, still selectable/copyable) text while streaming;
+// the final render (streaming=false) highlights it once, for real.
+function addCopyButtons(el, streaming) {
   el.querySelectorAll('pre').forEach(pre => {
     const code = pre.querySelector('code');
 
-    // Syntax highlighting (re-applied per streaming render; cheap at this scale)
-    if (code && !code.dataset.hl) {
+    if (code && !streaming && !code.dataset.hl) {
       const lang = codeLang(code);
       code.innerHTML = microHighlight(code.textContent, lang || 'js');
       code.dataset.hl = '1';
@@ -1054,7 +1496,7 @@ async function sendMessage() {
 
   const content = buildApiContent(text, attachments);
   state.messages.push({ role: 'user', content });
-  addUserMessage(text, attachments);
+  addUserMessage(text, attachments, state.messages.length - 1);
   userInput.value = '';
   clearAttachments();
   autoGrow();
@@ -1103,7 +1545,10 @@ async function generateReply() {
   wrap.className = 'message assistant';
   const avatar = document.createElement('div');
   avatar.className = 'avatar';
-  avatar.textContent = 'AI';
+  const faviconImg = document.createElement('img');
+  faviconImg.src = 'Scholar_favicon_32.png';
+  faviconImg.alt = 'Scholar';
+  avatar.appendChild(faviconImg);
   const body = document.createElement('div');
   body.className = 'message-body';
   const bubble = document.createElement('div');
@@ -1126,6 +1571,21 @@ async function generateReply() {
   const tStart = performance.now();
   let firstTokenAt = 0;
   let deltaCount = 0;
+  // Re-rendering (full markdown re-parse + innerHTML replace) on every single
+  // streamed token is O(total tokens²) over a long reply and is what was
+  // bogging the tab down — throttle DOM updates instead. The loop always
+  // finishes with one untimed final render, so nothing is ever left stale.
+  //
+  // The interval itself grows with the message so far: re-parsing and
+  // rebuilding the DOM for a short reply is cheap enough to do ~15x/sec and
+  // still feel live, but that same rebuild on a reply that's grown into the
+  // tens of thousands of characters (a model stuck repeating itself well
+  // past a normal reply length, given max_tokens defaults to 20000, is the
+  // realistic case) gets proportionally more expensive every tick. Capping
+  // the interval bounds the worst case instead of grinding the tab down for
+  // the rest of a very long generation.
+  let lastRenderAt = 0;
+  const renderInterval = () => Math.min(1000, 66 + Math.floor((fullContent.length + reasoning.length) / 100));
   let usage = null;
   let finishReason = null;
 
@@ -1137,39 +1597,121 @@ async function generateReply() {
   const slowTimer = setTimeout(() => { if (!firstTokenAt) body.appendChild(slowNote); }, 10000);
   const clearSlow = () => { clearTimeout(slowTimer); slowNote.remove(); };
 
-  // Combine separate reasoning (LM Studio's reasoning_content) with the answer
-  // so renderMessage can wrap it as a collapsible block. Inline <think> tags
-  // already live inside fullContent and are handled there.
+  // Combine separate reasoning (LM Studio's reasoning_content) with the
+  // answer — nothing is hidden, so this just concatenates them for display.
   const withReasoning = () =>
-    reasoning ? `<think>${reasoning}</think>${fullContent}` : fullContent;
+    reasoning ? `${reasoning}\n\n${fullContent}` : fullContent;
 
   // Live list of MCP tool calls for this reply, rendered above the text.
+  //
+  // Calls are tracked in an array rather than a name-keyed map: a model stuck
+  // in a loop calls the same tool over and over, and each attempt needs its
+  // own row (and its own arguments) for the loop to be visible at all.
   const toolsEl = document.createElement('div');
   toolsEl.className = 'tool-calls hidden';
   body.insertBefore(toolsEl, bubble);
-  const toolNodes = new Map();
+  const toolCalls = [];  // { el, name, sig }
+
+  // Plugin integrations (what mcpIntegrations sends) report `plugin_id`;
+  // ephemeral MCP servers report `server_label`.
+  const providerLabel = (info) =>
+    info?.server_label || String(info?.plugin_id || '').replace(/^mcp\//, '');
+
+  // Arguments on one line, so a repeated call is recognisable at a glance.
+  const formatArgs = (args) => {
+    if (args == null || typeof args !== 'object') return '';
+    const s = JSON.stringify(args);
+    return s.length > 140 ? s.slice(0, 139) + '…' : s;
+  };
+
+  // Warns once the same tool+arguments pair comes round repeatedly — the
+  // shape a tool loop takes. LM Studio drives the tool loop server-side and
+  // /api/v1/chat has no call limit, so Stop is the only way out.
+  const loopNote = document.createElement('div');
+  loopNote.className = 'tool-loop-note hidden';
+  const checkLoop = (call) => {
+    const n = toolCalls.filter(c => c.sig === call.sig).length;
+    if (n < 3) return;
+    loopNote.textContent =
+      `⚠ ${call.name} has run ${n} times with the same arguments — the model ` +
+      `looks stuck in a tool loop. Press Stop, then try fewer MCP tools, a ` +
+      `lower temperature, or a stronger tool-calling model.`;
+    loopNote.classList.remove('hidden');
+    toolsEl.appendChild(loopNote);  // keep it last as rows keep arriving
+  };
+
+  const setToolArgs = (call, args) => {
+    if (args == null || call.sig !== call.name) return;
+    call.sig = call.name + ' ' + JSON.stringify(args);
+    const argsEl = call.el.querySelector('.tool-call-args');
+    if (argsEl) argsEl.textContent = formatArgs(args);
+    // Repeats can only be spotted once the arguments are known.
+    if (toolCalls.some(c => c !== call && c.sig === call.sig)) call.el.classList.add('repeat');
+  };
+
   const addToolCall = (name, provider) => {
     toolsEl.classList.remove('hidden');
     const el = document.createElement('div');
     el.className = 'tool-call running';
     el.innerHTML =
       `<span class="tool-call-spinner"></span>` +
-      `<span class="tool-call-name">${escapeHtml(name)}</span>` +
-      (provider ? `<span class="tool-call-src">${escapeHtml(provider)}</span>` : '');
+      `<span class="tool-call-name"></span>` +
+      `<span class="tool-call-args"></span>` +
+      `<span class="tool-call-src"></span>`;
+    el.querySelector('.tool-call-name').textContent = name;
+    el.querySelector('.tool-call-src').textContent = provider || '';
     toolsEl.appendChild(el);
-    toolNodes.set(name, el);
+    if (!loopNote.classList.contains('hidden')) toolsEl.appendChild(loopNote);
+    const call = { el, name, sig: name };
+    toolCalls.push(call);
     scrollToBottom();
-    return el;
+    return call;
   };
-  const finishToolCall = (name, ok) => {
-    // Fall back to the most recent still-running call when the end event
-    // doesn't name the tool.
-    const el = toolNodes.get(name) || [...toolsEl.querySelectorAll('.tool-call.running')].pop();
-    if (!el) return;
-    el.classList.remove('running');
-    el.classList.add(ok ? 'done' : 'failed');
-    const spinner = el.querySelector('.tool-call-spinner');
+
+  // `name` is absent on some end events — fall back to the newest still-running
+  // row, and synthesise a row when a failure has no matching start at all
+  // (an invalid tool name fails before any tool_call.start is emitted).
+  const findRunning = (name) => {
+    for (let i = toolCalls.length - 1; i >= 0; i--) {
+      const c = toolCalls[i];
+      if (c.el.classList.contains('running') && (!name || c.name === name)) return c;
+    }
+    return name ? findRunning(null) : null;
+  };
+
+  // Some tool implementations report failure by returning a normal string
+  // result (e.g. "Error: DuckDuckGo CAPTCHA blocked the search.") rather
+  // than failing the call — tool_call.success either way, nothing in the
+  // event itself distinguishes it. A truncated output preview is the only
+  // way to see that from the row instead of relying on the model to relay
+  // it faithfully in its answer.
+  const formatOutput = (output) => {
+    if (!output) return '';
+    const s = String(output).replace(/\s+/g, ' ').trim();
+    return s.length > 200 ? s.slice(0, 199) + '…' : s;
+  };
+
+  const finishToolCall = (name, ok, { args, reason, output } = {}) => {
+    const call = findRunning(name) || addToolCall(name || 'tool', '');
+    setToolArgs(call, args);
+    call.el.classList.remove('running');
+    call.el.classList.add(ok ? 'done' : 'failed');
+    const spinner = call.el.querySelector('.tool-call-spinner');
     if (spinner) spinner.textContent = ok ? '✓' : '✕';
+    if (!ok && reason) {
+      const why = document.createElement('span');
+      why.className = 'tool-call-error';
+      why.textContent = reason;
+      call.el.appendChild(why);
+    }
+    if (output) {
+      const preview = document.createElement('span');
+      preview.className = 'tool-call-output';
+      preview.textContent = formatOutput(output);
+      preview.title = String(output);
+      call.el.appendChild(preview);
+    }
+    checkLoop(call);
   };
 
   try {
@@ -1188,6 +1730,17 @@ async function generateReply() {
           stream: useStream,
         };
 
+    // Reasoning controls — additive on top of either shape above. A model
+    // that doesn't recognize these fields just ignores them; "on"/"normal"
+    // are each the default already, so only deviations from that get sent.
+    // Two independent mechanisms, because different model families use
+    // different ones: Qwen3-style templates read chat_template_kwargs, while
+    // gpt-oss-style models read the nested `reasoning.effort` LM Studio (and
+    // OpenAI's Responses API) actually document — NOT a flat
+    // `reasoning_effort` string, which LM Studio silently ignores.
+    if (!state.enableThinking) payload.chat_template_kwargs = { enable_thinking: false };
+    if (state.lowEffort) payload.reasoning = { effort: 'low' };
+
     const resp = await fetch(url, {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -1204,18 +1757,6 @@ async function generateReply() {
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      let renderScheduled = false;
-
-      const scheduleRender = () => {
-        if (renderScheduled) return;
-        renderScheduled = true;
-        requestAnimationFrame(() => {
-          bubble.innerHTML = renderMessage(withReasoning(), true);
-          addCopyButtons(bubble);
-          scrollToBottom();
-          renderScheduled = false;
-        });
-      };
 
       while (true) {
         const { done, value } = await reader.read();
@@ -1245,16 +1786,28 @@ async function generateReply() {
                   if (chunk.content) { fullContent += chunk.content; changed = true; }
                   break;
                 case 'tool_call.start':
-                  addToolCall(chunk.tool || 'tool', chunk.provider_info?.server_label);
+                  addToolCall(chunk.tool || 'tool', providerLabel(chunk.provider_info));
                   break;
+                case 'tool_call.arguments': {
+                  const call = findRunning(chunk.tool);
+                  if (call) setToolArgs(call, chunk.arguments);
+                  break;
+                }
                 case 'tool_call.success':
-                  finishToolCall(chunk.tool, true);
+                  finishToolCall(chunk.tool, true, { args: chunk.arguments, output: chunk.output });
                   break;
                 case 'tool_call.failure':
-                  finishToolCall(chunk.tool, false);
+                  // This event carries no top-level `tool` — the attempted name
+                  // and the arguments live under `metadata`, the cause in
+                  // `reason` ("Cannot find tool with name open_browser.").
+                  finishToolCall(chunk.metadata?.tool_name, false, {
+                    args: chunk.metadata?.arguments,
+                    reason: chunk.reason,
+                  });
                   break;
                 case 'error':
-                  throw new Error(chunk.message || chunk.error || 'Stream error');
+                  // `error` is an object: { type, message, code, param }.
+                  throw new Error(chunk.error?.message || chunk.message || 'Stream error');
                 case 'chat.end': {
                   const r = chunk.result || {};
                   if (r.stats) {
@@ -1278,9 +1831,15 @@ async function generateReply() {
             }
 
             if (changed) {
-              if (!firstTokenAt) { firstTokenAt = performance.now(); state.lastLoadedModel = targetModel; clearSlow(); }
+              const now = performance.now();
+              if (!firstTokenAt) { firstTokenAt = now; state.lastLoadedModel = targetModel; clearSlow(); }
               deltaCount++;
-              scheduleRender();
+              if (now - lastRenderAt >= renderInterval()) {
+                lastRenderAt = now;
+                bubble.innerHTML = renderMessage(withReasoning());
+                addCopyButtons(bubble, true);
+                scrollToBottom();
+              }
             }
           } catch(e) {
             if (e instanceof SyntaxError) continue; // partial/garbage line
@@ -1289,9 +1848,7 @@ async function generateReply() {
         }
       }
 
-      // Final render (streaming=false) so un-tagged reasoning gets split from
-      // the answer now that the whole message has arrived.
-      bubble.innerHTML = renderMessage(withReasoning(), false);
+      bubble.innerHTML = renderMessage(withReasoning());
       addCopyButtons(bubble);
       scrollToBottom();
     } else if (useMcp) {
@@ -1310,11 +1867,8 @@ async function generateReply() {
         if (part.type === 'message') fullContent += part.content || '';
         else if (part.type === 'reasoning') reasoning += part.content || '';
         else if (part.type === 'tool_call') {
-          const el = addToolCall(part.name || part.tool || 'tool', part.provider_info?.server_label);
-          el.classList.remove('running');
-          el.classList.add('done');
-          const sp = el.querySelector('.tool-call-spinner');
-          if (sp) sp.textContent = '✓';
+          addToolCall(part.tool || part.name || 'tool', providerLabel(part.provider_info));
+          finishToolCall(part.tool || part.name, true, { args: part.arguments, output: part.output });
         }
       }
       if (!fullContent && !reasoning) fullContent = '(empty response)';
@@ -1452,6 +2006,97 @@ function addMessageActions(body, getText, getRaw) {
   }
 }
 
+const EDIT_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+
+// Copy + Edit actions for a user (prompt) message. Edit swaps the bubble for
+// a textarea; saving truncates state.messages (and the DOM) from this point
+// on and resends, exactly like editing a prompt in Claude/ChatGPT. `index`
+// is this message's position in state.messages at render time — stable
+// because messages before it never move, and editing removes everything
+// from `index` onward (in both state and DOM) before pushing the edit.
+function addUserMessageActions(body, wrap, bubble, text, attachments, index) {
+  const row = document.createElement('div');
+  row.className = 'msg-actions';
+
+  const copy = document.createElement('button');
+  copy.className = 'msg-action-btn';
+  copy.innerHTML = COPY_SVG + '<span>Copy</span>';
+  copy.addEventListener('click', () => {
+    navigator.clipboard.writeText(text || '');
+    const span = copy.querySelector('span');
+    span.textContent = 'Copied!';
+    setTimeout(() => span.textContent = 'Copy', 1500);
+  });
+  row.appendChild(copy);
+
+  if (index != null) {
+    const edit = document.createElement('button');
+    edit.className = 'msg-action-btn';
+    edit.innerHTML = EDIT_SVG + '<span>Edit</span>';
+    edit.addEventListener('click', () => startEditMessage(body, wrap, bubble, row, text, attachments, index));
+    row.appendChild(edit);
+  }
+
+  body.appendChild(row);
+}
+
+function startEditMessage(body, wrap, bubble, actionsRow, text, attachments, index) {
+  if (state.streaming) return;
+
+  const snapshot = bubble.innerHTML;
+  bubble.innerHTML = '';
+  actionsRow.classList.add('hidden');
+
+  const textarea = document.createElement('textarea');
+  textarea.className = 'edit-textarea';
+  textarea.value = text || '';
+  bubble.appendChild(textarea);
+
+  const editActions = document.createElement('div');
+  editActions.className = 'edit-actions';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'msg-action-btn';
+  cancelBtn.textContent = 'Cancel';
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'msg-action-btn edit-save-btn';
+  saveBtn.textContent = 'Save & Submit';
+  editActions.appendChild(cancelBtn);
+  editActions.appendChild(saveBtn);
+  bubble.appendChild(editActions);
+
+  textarea.focus();
+  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+
+  cancelBtn.addEventListener('click', () => {
+    bubble.innerHTML = snapshot;
+    actionsRow.classList.remove('hidden');
+  });
+
+  saveBtn.addEventListener('click', () => {
+    if (state.streaming || !state.connected) return;
+    const newText = textarea.value.trim();
+    const hasImage = attachments.some(a => a.kind === 'image');
+    if (!newText && !hasImage) return;
+
+    const newContent = buildApiContent(newText, attachments);
+    state.messages = state.messages.slice(0, index);
+    state.messages.push({ role: 'user', content: newContent });
+    // The truncated tail invalidates any server-side MCP thread, same as regenerate.
+    state.mcpResponseId = null;
+
+    // Drop this message and everything after it, then re-render the edit.
+    let node = wrap;
+    while (node) {
+      const next = node.nextSibling;
+      node.remove();
+      node = next;
+    }
+    addUserMessage(newText, attachments, index);
+    saveCurrentSession();
+    generateReply();
+  });
+}
+
 // === Auto-naming chats ===
 // After the first exchange, quietly ask the model for a 3–5 word title.
 async function maybeAutoName() {
@@ -1516,11 +2161,13 @@ function newChat() {
   state.messages = [];
   state.currentSessionId = null;
   state.mcpResponseId = null;
+  state.chatFullyLoaded = false;
   clearAttachments();
   messagesEl.innerHTML = '';
   if (welcome) messagesEl.appendChild(welcome);
   showWelcome(true);
   renderHistoryList();
+  updateDataStats();
   if (!inputArea.classList.contains('hidden')) userInput.focus();
 }
 
@@ -1579,12 +2226,15 @@ function saveCurrentSession() {
     temperature: parseFloat(tempSlider.value),
     maxTokens: parseInt(tokensSlider.value),
     systemPrompt: systemPrompt.value,
+    enableThinking: state.enableThinking,
+    lowEffort: state.lowEffort,
   };
   session.updatedAt = now;
   // Keep the active session at the top, newest-first
   state.sessions = [session, ...state.sessions.filter(s => s.id !== session.id)];
   persistSessions();
   renderHistoryList();
+  updateDataStats();
 }
 
 function loadSession(id) {
@@ -1603,6 +2253,7 @@ function loadSession(id) {
     modelSelect.value = session.model;
     state.currentModel = session.model;
     refreshModelCaps();
+    syncModelPickerLabel();
   }
   // Restore the chat's settings
   if (session.settings) {
@@ -1610,13 +2261,14 @@ function loadSession(id) {
     if (st.temperature != null) { tempSlider.value = st.temperature; tempValue.textContent = tempSlider.value; }
     if (st.maxTokens != null) { tokensSlider.value = st.maxTokens; tokensValue.textContent = tokensSlider.value; }
     if (st.systemPrompt != null) systemPrompt.value = st.systemPrompt;
+    if (st.enableThinking != null) state.enableThinking = st.enableThinking;
+    if (st.lowEffort != null) state.lowEffort = st.lowEffort;
+    updateReasoningToggleUI();
     saveSettings();
   }
 
-  messagesEl.innerHTML = '';
-  if (welcome) messagesEl.appendChild(welcome);
-  showWelcome(false);
-  state.messages.forEach(renderStoredMessage);
+  state.chatFullyLoaded = false;
+  renderCurrentMessages();
   scrollToBottom(true);
 
   // Keep the sidebar open on desktop (push mode); close it on phones
@@ -1636,6 +2288,7 @@ function deleteSession(id) {
   persistSessions();
   if (state.currentSessionId === id) newChat();
   else renderHistoryList();
+  updateDataStats();
 }
 
 function relTime(ts) {
@@ -1802,6 +2455,114 @@ function toggleHistory() {
   else closeHistory();
 }
 
+// Drags the Chats panel open/closed 1:1 with the finger — like a native iOS
+// side menu (or the Claude app), not a threshold that just pops it open once
+// crossed. Two gestures share the same tracking: an edge swipe from the left
+// when the panel is closed opens it; a swipe anywhere while it's open closes
+// it.
+//
+// Restricted to iOS installed web apps (Add to Home Screen, standalone
+// display mode) — `navigator.standalone` is only ever `true` there. In an
+// ordinary browser tab (iOS Safari included) a left-edge swipe is the "back"
+// gesture; hijacking it there would fight the browser's own navigation, so
+// this stays off everywhere else.
+function setupHistoryPanelSwipe() {
+  if (window.navigator.standalone !== true) return;
+
+  const EDGE_ZONE_PX = 24;    // an "opening" drag must start this close to the left edge
+  const CONFIRM_PX = 10;      // drag distance before committing to horizontal vs. a vertical scroll
+  const OPEN_FRACTION = 0.4;  // release past this fraction of the panel's width -> snap open
+  const FLICK_VELOCITY = 0.5; // px/ms — a fast flick commits regardless of distance
+
+  let mode = null;       // 'opening' | 'closing' | null
+  let active = false;    // horizontal intent confirmed — currently steering the panel
+  let startX = 0, startY = 0, startT = 0, lastX = 0, lastT = 0, velocity = 0;
+  let panelWidth = 0;
+
+  function beginDrag(clientX, clientY) {
+    const closed = historyPanel.classList.contains('hidden');
+    if (closed) {
+      if (clientX > EDGE_ZONE_PX) { mode = null; return; }
+      mode = 'opening';
+    } else {
+      mode = 'closing';
+    }
+    startX = lastX = clientX;
+    startY = clientY;
+    startT = lastT = performance.now();
+    velocity = 0;
+    active = false;
+    panelWidth = historyPanel.getBoundingClientRect().width || 300;
+  }
+
+  function setDragPosition(rawOffset) {
+    // rawOffset: 0 (fully closed) .. panelWidth (fully open), regardless of mode.
+    const clamped = Math.max(0, Math.min(panelWidth, rawOffset));
+    historyPanel.style.transform = `translateX(${clamped - panelWidth}px)`;
+    historyOverlay.style.opacity = String(clamped / panelWidth);
+  }
+
+  function endDrag(rawOffset) {
+    historyPanel.classList.remove('dragging');
+    historyOverlay.classList.remove('dragging');
+    historyPanel.style.transform = '';
+    historyOverlay.style.opacity = '';
+    const openEnough = rawOffset / panelWidth >= OPEN_FRACTION || velocity >= FLICK_VELOCITY;
+    const closeEnough = rawOffset / panelWidth <= (1 - OPEN_FRACTION) || velocity <= -FLICK_VELOCITY;
+    if (mode === 'opening') {
+      if (openEnough) openHistory(); // else stays closed — CSS transition snaps it back
+    } else if (mode === 'closing') {
+      if (closeEnough) closeHistory(); else openHistory(); // re-affirm open so the CSS snap plays
+    }
+    mode = null;
+    active = false;
+  }
+
+  document.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    beginDrag(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    if (!mode) return;
+    const t = e.touches[0];
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+
+    if (!active) {
+      if (Math.abs(dx) < CONFIRM_PX && Math.abs(dy) < CONFIRM_PX) return;
+      if (Math.abs(dy) >= Math.abs(dx)) { mode = null; return; } // vertical scroll, not a panel drag
+      active = true;
+      historyPanel.classList.add('dragging');
+      historyOverlay.classList.remove('hidden');
+      historyOverlay.classList.add('dragging');
+    }
+
+    const now = performance.now();
+    if (now > lastT) velocity = (t.clientX - lastX) / (now - lastT);
+    lastX = t.clientX; lastT = now;
+
+    const rawOffset = mode === 'opening' ? dx : panelWidth + dx;
+    setDragPosition(rawOffset);
+    e.preventDefault(); // once committed, don't let the page scroll under the drag
+  }, { passive: false });
+
+  document.addEventListener('touchend', (e) => {
+    if (!mode) return;
+    if (!active) { mode = null; return; }
+    const t = e.changedTouches[0];
+    const dx = t.clientX - startX;
+    const rawOffset = mode === 'opening' ? dx : panelWidth + dx;
+    endDrag(rawOffset);
+  }, { passive: true });
+
+  document.addEventListener('touchcancel', () => {
+    if (active) endDrag(mode === 'opening' ? 0 : panelWidth); // snap back to where it started
+    mode = null;
+    active = false;
+  }, { passive: true });
+}
+
 // === Sidebar ===
 function openSidebar() {
   sidebar.classList.remove('hidden');
@@ -1828,7 +2589,12 @@ function updateSendBtn() {
 }
 
 // === Attachments ===
-const MAX_FILE_BYTES = 1024 * 1024; // 1 MB per text file
+const MAX_FILE_BYTES = 1024 * 1024; // 1 MB per text file (also caps extracted PDF text)
+const MAX_PDF_BYTES = 20 * 1024 * 1024; // 20 MB per PDF, before text extraction
+
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js';
+}
 
 function readFile(file, asDataUrl) {
   return new Promise((resolve, reject) => {
@@ -1840,16 +2606,18 @@ function readFile(file, asDataUrl) {
   });
 }
 
-// Splits a mixed file list (from the picker or a drag-drop) into images vs
-// everything else, routing each to its handler.
+// Splits a mixed file list (from the picker or a drag-drop) into images,
+// PDFs, and plain text, routing each to its handler.
 function handleAttachedFiles(files) {
   if (!files.length) return;
   const images = files.filter(f => f.type.startsWith('image/'));
-  const texts = files.filter(f => !f.type.startsWith('image/'));
+  const pdfs = files.filter(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
+  const texts = files.filter(f => !images.includes(f) && !pdfs.includes(f));
   if (images.length) {
     if (state.modelCaps.vision) handleImageFiles(images);
     else alert('The current model doesn\'t support images.');
   }
+  if (pdfs.length) handlePdfFiles(pdfs);
   if (texts.length) handleTextFiles(texts);
 }
 
@@ -1881,6 +2649,44 @@ async function handleTextFiles(files) {
       const text = await readFile(file, false);
       state.attachments.push({ kind: 'file', name: file.name, size: file.size, text });
     } catch (e) { /* skip unreadable file */ }
+  }
+  renderAttachments();
+  updateSendBtn();
+}
+
+// Extracts text (not a render) from each page via pdf.js, running entirely
+// in-browser — the PDF's bytes never leave the device. Scanned/image-only
+// PDFs yield no text and are skipped since there's nothing to send.
+async function handlePdfFiles(files) {
+  if (!window.pdfjsLib) {
+    alert('PDF support failed to load — try reloading the page.');
+    return;
+  }
+  for (const file of files) {
+    if (file.size > MAX_PDF_BYTES) {
+      alert(`"${file.name}" is larger than 20 MB and was skipped.`);
+      continue;
+    }
+    try {
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      let text = '';
+      for (let i = 1; i <= pdf.numPages && text.length <= MAX_FILE_BYTES; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        text += content.items.map(it => it.str).join(' ') + '\n\n';
+      }
+      text = text.trim();
+      if (!text) {
+        alert(`"${file.name}" has no extractable text (it may be a scanned image) and was skipped.`);
+        continue;
+      }
+      const truncated = text.length > MAX_FILE_BYTES;
+      if (truncated) text = text.slice(0, MAX_FILE_BYTES) + '\n\n[...truncated]';
+      state.attachments.push({ kind: 'file', name: file.name, size: file.size, text });
+    } catch (e) {
+      alert(`Couldn't read "${file.name}" as a PDF.`);
+    }
   }
   renderAttachments();
   updateSendBtn();
@@ -2058,12 +2864,37 @@ function setupListeners() {
   tokensSlider.addEventListener('input', () => { tokensValue.textContent = tokensSlider.value; saveSettings(); });
   systemPrompt.addEventListener('change', saveSettings);
   streamToggle.addEventListener('change', saveSettings);
-  collapseToggle.addEventListener('change', saveSettings);
+  if (messageLoadLimitSlider) {
+    // 'input' (every drag tick) only updates the number label — re-rendering
+    // the message list on every tick would recreate the exact heaviness this
+    // setting exists to avoid. The limit itself only applies on 'change'
+    // (drag release), and only to chats opened after that.
+    messageLoadLimitSlider.addEventListener('input', () => {
+      messageLoadLimitValue.textContent = messageLoadLimitSlider.value;
+    });
+    messageLoadLimitSlider.addEventListener('change', () => {
+      state.messageLoadLimit = parseInt(messageLoadLimitSlider.value);
+      saveSettings();
+    });
+  }
+  if (stripImagesBtn) {
+    stripImagesBtn.addEventListener('click', () => {
+      const removed = stripImagesFromCurrentChat();
+      stripImagesBtn.textContent = removed > 0
+        ? `Removed ${removed} image${removed === 1 ? '' : 's'}`
+        : 'No images in this chat';
+      setTimeout(() => { stripImagesBtn.textContent = 'Remove images from this chat'; }, 2500);
+    });
+  }
+  if (clearAllChatsBtn) clearAllChatsBtn.addEventListener('click', clearAllChats);
 
   // Chat
   modelSelect.addEventListener('change', onModelChange);
+  modelPickerBtn.addEventListener('click', openModelPicker);
+  modelModalClose.addEventListener('click', closeModelPicker);
+  modelModal.addEventListener('click', e => { if (e.target === modelModal) closeModelPicker(); });
   newChatBtn.addEventListener('click', newChat);
-  userInput.addEventListener('input', () => { autoGrow(); updateSendBtn(); });
+  userInput.addEventListener('input', () => { autoGrow(); updateSendBtn(); updateWelcomeFade(); });
   userInput.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -2077,6 +2908,21 @@ function setupListeners() {
   // their native "Take Photo / Photo Library / Browse Files" sheet.
   attachFileBtn.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', e => { handleAttachedFiles([...e.target.files]); e.target.value = ''; });
+
+  if (thinkingToggleBtn) {
+    thinkingToggleBtn.addEventListener('click', () => {
+      state.enableThinking = !state.enableThinking;
+      saveSettings();
+      updateReasoningToggleUI();
+    });
+  }
+  if (lowEffortToggleBtn) {
+    lowEffortToggleBtn.addEventListener('click', () => {
+      state.lowEffort = !state.lowEffort;
+      saveSettings();
+      updateReasoningToggleUI();
+    });
+  }
 
   userInput.addEventListener('paste', e => {
     if (!state.modelCaps.vision) return;
@@ -2093,6 +2939,7 @@ function setupListeners() {
   historyOverlay.addEventListener('click', closeHistory);
   historyNew.addEventListener('click', () => { newChat(); if (window.innerWidth < 768) closeHistory(); });
   historySearch.addEventListener('input', renderHistoryList);
+  setupHistoryPanelSwipe();
 
   // Version dropdown (desktop only)
   if (versionBtn) {
@@ -2104,6 +2951,13 @@ function setupListeners() {
       if (!e.target.closest('.version-dropdown-wrap')) {
         versionDropdown.classList.add('hidden');
       }
+    });
+  }
+  if (changelogViewAll) changelogViewAll.addEventListener('click', openChangelogModal);
+  if (changelogClose) changelogClose.addEventListener('click', closeChangelogModal);
+  if (changelogModal) {
+    changelogModal.addEventListener('click', (e) => {
+      if (e.target === changelogModal) closeChangelogModal();
     });
   }
 
