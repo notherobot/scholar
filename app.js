@@ -1,13 +1,18 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.8.3';
-const APP_VERSION_DATE = '2026-08-26T20:00:00Z';
+const APP_VERSION = 'v0.8.4';
+const APP_VERSION_DATE = '2026-08-28T00:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.8.4', date: '2026-08-28T00:00:00Z', notes: [
+    'Send/Stop\'s "→"/"■" text characters replaced with proper SVG icons — the arrow was reading as too thin',
+    'Fixed the Ko-Metru background mark not shifting over with the composer/welcome text when the Chats panel pushes the layout open',
+    'Smoothed the Chats and Settings panel slide animations — they were snapping open/closed in 50ms instead of sliding',
+  ] },
   { version: 'v0.8.3', date: '2026-08-26T20:00:00Z', notes: [
     '"Scholar" title moved to true center of the header bar',
     'Status dot and model picker moved out of the header and into the composer, centered between the attach icon and Send/Stop',
