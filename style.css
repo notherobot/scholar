@@ -1368,6 +1368,7 @@ pre:has(.preview-btn) .copy-btn { right: 72px; }
   align-items: center;
   gap: 6px;
   padding: 0 8px;
+  position: relative;
 }
 
 .composer-status-group {
@@ -1405,6 +1406,95 @@ pre:has(.preview-btn) .copy-btn { right: 72px; }
 
 .attach-icon:hover { color: var(--text-primary); background: var(--bg-hover); }
 .attach-icon:active { color: var(--accent); }
+
+/* Folder assignment icon — adjacent to attach icon */
+.folder-assign-icon {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  -webkit-appearance: none;
+  transition: color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.folder-assign-icon:hover { color: var(--text-primary); background: var(--bg-hover); }
+.folder-assign-icon:active { color: var(--accent); }
+
+/* When a folder is assigned, highlight the icon */
+.folder-assign-icon.folder-assigned {
+  color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(126, 203, 245, 0.3);
+}
+
+/* Folder picker popover — positioned near the button */
+.folder-picker-popover {
+  position: absolute;
+  bottom: 100%;
+  left: 8px;
+  margin-bottom: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 60;
+  min-width: 200px;
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+}
+
+.folder-picker-popover.hidden { display: none; }
+
+.folder-picker-header {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.folder-picker-list {
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.folder-picker-item {
+  padding: 8px 12px;
+  margin: 0;
+  cursor: pointer;
+  color: var(--text-primary);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.1s;
+}
+
+.folder-picker-item:hover { background: var(--bg-hover); }
+
+.folder-picker-item.selected {
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.folder-picker-item svg { flex-shrink: 0; }
+
+.folder-picker-item-label { flex: 1; }
 
 /* === Attachment previews === */
 .attachments {
