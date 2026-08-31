@@ -1808,6 +1808,7 @@ body.resizing-panel { cursor: ew-resize; user-select: none; }
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  position: relative;
 }
 
 .history-item:hover {
@@ -1856,6 +1857,45 @@ body.resizing-panel { cursor: ew-resize; user-select: none; }
 
 @media (hover: none) {
   .history-delete { opacity: 1; }
+}
+
+/* Delete confirmation overlay — red Delete button over the pin/folder/trash icons */
+.history-delete-confirm {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  display: flex;
+  gap: 6px;
+}
+
+.history-delete-confirm.hidden { display: none; }
+
+.history-delete-confirm-btn {
+  background: linear-gradient(to bottom, rgba(239,68,68,0.2), rgba(239,68,68,0.1));
+  border: 1px solid rgba(239,68,68,0.5);
+  color: var(--danger);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  transition: all 0.15s;
+  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
+}
+
+.history-delete-confirm-btn:hover {
+  background: linear-gradient(to bottom, rgba(239,68,68,0.3), rgba(239,68,68,0.2));
+  border-color: var(--danger);
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+
+.history-delete-confirm-btn:active {
+  transform: scale(0.98);
 }
 
 .history-empty {

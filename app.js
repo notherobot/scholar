@@ -1,13 +1,16 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.8.5';
-const APP_VERSION_DATE = '2026-08-28T01:00:00Z';
+const APP_VERSION = 'v0.8.6';
+const APP_VERSION_DATE = '2026-08-31T01:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.8.6', date: '2026-08-31T01:00:00Z', notes: [
+    'Delete confirmation: clicking the trash icon enters confirmation mode — a red Delete button overlays the chat\'s action icons. Click Delete to confirm or click elsewhere to cancel.',
+  ] },
   { version: 'v0.8.5', date: '2026-08-28T01:00:00Z', notes: [
     'Folder pre-assignment for new chats: click the folder icon next to the attachment button to pick a folder before your first message. The icon highlights when a folder is assigned. The chat joins that folder automatically when created.',
   ] },
@@ -190,6 +193,7 @@ const state = {
   folders: [],           // chat folders: { id, name, collapsed }; a session
                           // opts into one via session.folderId
   nextChatFolderId: null, // folder assignment for the next new chat (cleared after send)
+  deleteConfirmSessionId: null, // session in delete confirmation mode
   currentSessionId: null,
   stickToBottom: true,   // auto-scroll only while the user is at the bottom
   // LM Studio API token, sent as `Authorization: Bearer` on every request.
@@ -2058,6 +2062,7 @@ function loadSession(id) {
   if (!session) return;
   if (state.streaming) stopStreaming();
   state.currentSessionId = id;
+  state.deleteConfirmSessionId = null;
   state.messages = JSON.parse(JSON.stringify(session.messages || []));
   clearAttachments();
 
@@ -2400,12 +2405,38 @@ function buildHistoryItem(session) {
   del.className = 'history-delete';
   del.setAttribute('aria-label', 'Delete chat');
   del.innerHTML = TRASH_SVG;
-  del.addEventListener('click', e => { e.stopPropagation(); deleteSession(session.id); });
+
+  const confirmOverlay = document.createElement('div');
+  confirmOverlay.className = 'history-delete-confirm hidden';
+  const confirmBtn = document.createElement('button');
+  confirmBtn.className = 'history-delete-confirm-btn';
+  confirmBtn.setAttribute('aria-label', 'Confirm delete');
+  confirmBtn.textContent = 'Delete';
+  confirmBtn.addEventListener('click', e => { e.stopPropagation(); deleteSession(session.id); });
+  confirmOverlay.appendChild(confirmBtn);
+
+  del.addEventListener('click', e => {
+    e.stopPropagation();
+    if (state.deleteConfirmSessionId === session.id) {
+      // Already in confirm mode, delete immediately
+      deleteSession(session.id);
+    } else {
+      // Enter confirm mode
+      state.deleteConfirmSessionId = session.id;
+      renderHistoryList();
+    }
+  });
+
+  // If this session is in delete confirm mode, show the overlay
+  if (state.deleteConfirmSessionId === session.id) {
+    confirmOverlay.classList.remove('hidden');
+  }
 
   li.appendChild(main);
   li.appendChild(pin);
   li.appendChild(move);
   li.appendChild(del);
+  li.appendChild(confirmOverlay);
   return li;
 }
 
@@ -2526,6 +2557,7 @@ function renderHistoryList() {
 const HISTORY_OPEN_KEY = 'lmstudio-history-open';
 
 function openHistory() {
+  state.deleteConfirmSessionId = null;
   renderHistoryList();
   historyPanel.classList.remove('hidden');
   historyOverlay.classList.remove('hidden'); // hidden on wide screens via CSS
