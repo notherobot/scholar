@@ -1,13 +1,16 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.8.4';
-const APP_VERSION_DATE = '2026-08-28T00:00:00Z';
+const APP_VERSION = 'v0.8.5';
+const APP_VERSION_DATE = '2026-08-28T01:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.8.5', date: '2026-08-28T01:00:00Z', notes: [
+    'Folder pre-assignment for new chats: click the folder icon next to the attachment button to pick a folder before your first message. The icon highlights when a folder is assigned. The chat joins that folder automatically when created.',
+  ] },
   { version: 'v0.8.4', date: '2026-08-28T00:00:00Z', notes: [
     'Send/Stop\'s "→"/"■" text characters replaced with proper SVG icons — the arrow was reading as too thin',
     'Fixed the Ko-Metru background mark not shifting over with the composer/welcome text when the Chats panel pushes the layout open',
@@ -186,6 +189,7 @@ const state = {
   sessions: [],          // saved chat sessions
   folders: [],           // chat folders: { id, name, collapsed }; a session
                           // opts into one via session.folderId
+  nextChatFolderId: null, // folder assignment for the next new chat (cleared after send)
   currentSessionId: null,
   stickToBottom: true,   // auto-scroll only while the user is at the bottom
   // LM Studio API token, sent as `Authorization: Bearer` on every request.
@@ -253,6 +257,10 @@ const stopBtn        = $('#stop-btn');
 const attachFileBtn  = $('#attach-file-btn');
 const fileInput      = $('#file-input');
 const attachmentsEl  = $('#attachments');
+
+const folderAssignBtn = $('#folder-assign-btn');
+const folderPickerPopover = $('#folder-picker-popover');
+const folderPickerList = $('#folder-picker-list');
 
 const historyBtn     = $('#history-btn');
 const historyPanel   = $('#history-panel');
@@ -2022,6 +2030,12 @@ function saveCurrentSession() {
   if (!session) {
     session = { id: 'c' + now.toString(36) + Math.random().toString(36).slice(2, 7), createdAt: now };
     state.currentSessionId = session.id;
+    // Apply folder assignment to new sessions
+    if (state.nextChatFolderId) {
+      session.folderId = state.nextChatFolderId;
+      state.nextChatFolderId = null;
+      clearFolderAssignment();
+    }
   }
   session.messages = state.messages;
   if (!session.customTitle && !session.autoNamed) session.title = sessionTitle(state.messages);
@@ -2086,6 +2100,57 @@ function deleteSession(id) {
   if (state.currentSessionId === id) newChat();
   else renderHistoryList();
   updateDataStats();
+}
+
+// === Folder assignment picker ===
+function renderFolderPickerList() {
+  folderPickerList.innerHTML = '';
+
+  const noneItem = document.createElement('li');
+  noneItem.className = 'folder-picker-item' + (state.nextChatFolderId === null ? ' selected' : '');
+  noneItem.innerHTML = '<span class="folder-picker-item-label">No folder</span>';
+  noneItem.addEventListener('click', () => {
+    state.nextChatFolderId = null;
+    clearFolderAssignment();
+    closeFolderPicker();
+    renderFolderPickerList();
+  });
+  folderPickerList.appendChild(noneItem);
+
+  state.folders.forEach(folder => {
+    const item = document.createElement('li');
+    item.className = 'folder-picker-item' + (state.nextChatFolderId === folder.id ? ' selected' : '');
+    item.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6z"/></svg><span class="folder-picker-item-label">${escapeHtml(folder.name)}</span>`;
+    item.addEventListener('click', () => {
+      state.nextChatFolderId = folder.id;
+      updateFolderAssignmentUI();
+      closeFolderPicker();
+      renderFolderPickerList();
+    });
+    folderPickerList.appendChild(item);
+  });
+}
+
+function updateFolderAssignmentUI() {
+  if (state.nextChatFolderId) {
+    folderAssignBtn.classList.add('folder-assigned');
+  } else {
+    folderAssignBtn.classList.remove('folder-assigned');
+  }
+}
+
+function clearFolderAssignment() {
+  state.nextChatFolderId = null;
+  folderAssignBtn.classList.remove('folder-assigned');
+}
+
+function openFolderPicker() {
+  renderFolderPickerList();
+  folderPickerPopover.classList.remove('hidden');
+}
+
+function closeFolderPicker() {
+  folderPickerPopover.classList.add('hidden');
 }
 
 // === Chat folders ===
@@ -2973,6 +3038,16 @@ function setupListeners() {
   attachFileBtn.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', e => { handleAttachedFiles([...e.target.files]); e.target.value = ''; });
 
+  // Folder assignment picker
+  folderAssignBtn.addEventListener('click', openFolderPicker);
+  folderPickerPopover.addEventListener('click', e => e.stopPropagation());
+  document.addEventListener('click', e => {
+    if (!folderPickerPopover.classList.contains('hidden') &&
+        !folderAssignBtn.contains(e.target) &&
+        !folderPickerPopover.contains(e.target)) {
+      closeFolderPicker();
+    }
+  });
 
   userInput.addEventListener('paste', e => {
     if (!state.modelCaps.vision) return;
