@@ -468,13 +468,14 @@ header::before {
   max-width: 200px;
   outline: none;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
 }
 
 .model-dropdown:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
 
 .visually-hidden { display: none; }
 
-.model-picker-wrap { position: relative; }
+.model-picker-wrap { position: relative; flex-shrink: 0; }
 
 .model-picker-btn {
   display: flex;
@@ -1377,12 +1378,15 @@ pre:has(.preview-btn) .copy-btn { right: 72px; }
   justify-content: center;
   gap: 8px;
   min-width: 0;
+  flex-wrap: nowrap;
 }
 
 .composer-send-group {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
 }
 
 /* Bare attach icon — no button chrome, sits at the left of the tool row */

@@ -1,13 +1,16 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.8.6';
-const APP_VERSION_DATE = '2026-08-31T01:00:00Z';
+const APP_VERSION = 'v0.8.7';
+const APP_VERSION_DATE = '2026-08-31T02:30:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.8.7', date: '2026-08-31T02:30:00Z', notes: [
+    'Controls below the input field now stay on a single row at all viewport widths — status dot, model picker, Send/Stop, attach, and folder buttons no longer wrap',
+  ] },
   { version: 'v0.8.6', date: '2026-08-31T01:00:00Z', notes: [
     'Delete confirmation: clicking the trash icon enters confirmation mode — a red Delete button overlays the chat\'s action icons. Click Delete to confirm or click elsewhere to cancel.',
   ] },
