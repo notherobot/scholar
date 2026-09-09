@@ -1,13 +1,27 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.8.7';
-const APP_VERSION_DATE = '2026-08-31T02:30:00Z';
+const APP_VERSION = 'v0.9.0';
+const APP_VERSION_DATE = '2026-09-09T12:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.9.0', date: '2026-09-09T12:00:00Z', notes: [
+    'AnythingLLM is now the primary backend, on its default port 3001. Connect with your Tailscale address and an AnythingLLM API key (Settings → Tools → Developer API). LM Studio is still there as a backup — switch between them in Settings at any time',
+    'Projects, backed by AnythingLLM workspaces. A project holds documents and custom instructions that every chat inside it can draw on, the same way Claude Projects work. Create one from the Chats panel, then drag files onto it or paste a URL to add it to the project\'s knowledge',
+    'Each chat in a project is a real AnythingLLM thread, so history and retrieval live next to the documents instead of only in this browser',
+    'Agent mode: turn it on and Scholar runs the question through AnythingLLM\'s agent, which can search and read the web before answering. Its steps stream live above the reply, and the sources it used are listed underneath. This works over the native chat endpoint — the previous attempt went through the OpenAI-compatible shim, which silently never ran the agent at all',
+    'Answers now show the project documents they drew on, with the matching snippet on hover',
+    'Chat mode picker: Chat (normal), Query (answer only from project documents), or Automatic (let the model call tools when it can)',
+    'Scholar Code — a separate coding view with a file tree, an editor, a sandboxed live preview, and a chat that writes straight into your files. Files can be pushed into a project so later chats can read them',
+    'The composer row really does stay on one line now, at every width from 320px up. v0.8.7 claimed this but the row was a three-column grid holding four items, so Send had been wrapping onto its own line the whole time',
+    'A bare Tailscale IP now connects over http instead of https. Nothing issues certificates for an IP, so the old behaviour failed with a TLS error that read like the server being down; a .ts.net name still gets https',
+    'iPhone pass: the composer no longer overlaps itself — the project picker was overflowing its container, dropping the status dot on top of the agent button and running the project name under Send. Every button now meets the 44pt touch minimum, and no field is under 16px, which is what made iOS zoom the page in on a tap and never zoom back out',
+    'Scholar Code on a phone is now tabbed — Files, Editor, Chat — instead of three stacked panels each getting a fifth of the screen. The editor gets about 75% of the height, and tapping a file takes you straight to it',
+    'Fixed Scholar Code sitting under the Dynamic Island and behind the keyboard when installed to the home screen: it is position:fixed, so it inherited none of the app shell\'s safe-area insets or viewport height',
+  ] },
   { version: 'v0.8.7', date: '2026-08-31T02:30:00Z', notes: [
     'Controls below the input field now stay on a single row at all viewport widths — status dot, model picker, Send/Stop, attach, and folder buttons no longer wrap',
   ] },
@@ -181,6 +195,23 @@ const DEFAULT_SYSTEM_PROMPT = '';
 
 // === State ===
 const state = {
+  // Connection to both backends. AnythingLLM is the default; LM Studio stays
+  // configured alongside it so switching back is one click, not a re-setup.
+  conn: {
+    backend: BACKEND.ANYTHINGLLM,
+    allmUrl: '',
+    allmKey: '',
+    lmsUrl: '',
+    lmsToken: '',
+  },
+  // Projects (AnythingLLM workspaces). The active one scopes new chats; a
+  // chat that already exists keeps whatever project it was created in.
+  activeProjectSlug: null,
+  // AnythingLLM chat mode: 'chat' | 'query' | 'automatic'.
+  chatMode: 'chat',
+  // When on, messages are sent as `@agent ...`, which is what actually starts
+  // AnythingLLM's agent (with web search and scraping) over the REST API.
+  agentMode: false,
   apiBase: '',
   connected: false,
   messages: [],
@@ -222,6 +253,26 @@ const setupConnect   = $('#setup-connect');
 const setupError     = $('#setup-error');
 const setupToken     = $('#setup-token');
 const useLocalhost   = $('#use-localhost');
+const setupAllmUrl   = $('#setup-allm-url');
+const setupAllmKey   = $('#setup-allm-key');
+const useAllmLocal   = $('#use-allm-localhost');
+
+const sidebarAllmUrl = $('#sidebar-allm-url');
+const sidebarAllmKey = $('#sidebar-allm-key');
+const sidebarAllmReconnect = $('#sidebar-allm-reconnect');
+
+const modelPickerWrap  = $('.model-picker-wrap');
+const projectPickerBtn = $('#project-picker-btn');
+const projectPickerLabel = $('#project-picker-label');
+const projectModal     = $('#project-picker-modal');
+const projectModalClose = $('#project-picker-close');
+const projectPickerList = $('#project-picker-list');
+const agentToggle    = $('#agent-toggle');
+const chatModeWrap   = $('#chat-mode-wrap');
+const chatModeBtn    = $('#chat-mode-btn');
+const chatModeLabel  = $('#chat-mode-label');
+const chatModeMenu   = $('#chat-mode-menu');
+const codeViewBtn    = $('#code-view-btn');
 
 const headerEl       = $('#header');
 const chatContainer  = $('#chat-container');
@@ -303,6 +354,8 @@ function init() {
     }
   });
   renderChangelog();
+  Projects.init();
+  ScholarCode.init();
   loadSettings();
   loadSessions();
   loadFolders();
@@ -311,11 +364,8 @@ function init() {
   setupPanelResize(historyPanel, historyResizeHandle, '--history-width', 'lmstudio-history-width', 'left');
   updateDataStats();
 
-  // If we have a saved URL, skip setup and connect
-  const savedUrl = localStorage.getItem('lmstudio-server-url');
-  if (savedUrl) {
-    state.apiBase = savedUrl;
-    sidebarUrl.value = savedUrl;
+  // If the active backend already has an address, skip setup and connect.
+  if (activeUrl()) {
     showChat();
     connect();
     // Restore the Chats panel's open/closed state from last time — but only
@@ -345,12 +395,13 @@ function loadSettings() {
   streamToggle.checked = s.stream ?? true;
   tempValue.textContent = tempSlider.value;
   tokensValue.textContent = tokensSlider.value;
-  state.apiToken = s.apiToken ?? '';
   state.messageLoadLimit = s.messageLoadLimit ?? 50;
-  if (apiTokenInput) apiTokenInput.value = state.apiToken;
-  if (setupToken) setupToken.value = state.apiToken;
+  state.chatMode = s.chatMode ?? 'chat';
+  state.agentMode = s.agentMode ?? false;
   if (messageLoadLimitSlider) messageLoadLimitSlider.value = state.messageLoadLimit;
   if (messageLoadLimitValue) messageLoadLimitValue.textContent = state.messageLoadLimit;
+
+  loadConnection(s);
 }
 
 function saveSettings() {
@@ -359,37 +410,143 @@ function saveSettings() {
     temperature: parseFloat(tempSlider.value),
     maxTokens: parseInt(tokensSlider.value),
     stream: streamToggle.checked,
-    apiToken: state.apiToken,
     messageLoadLimit: state.messageLoadLimit,
+    chatMode: state.chatMode,
+    agentMode: state.agentMode,
   }));
 }
 
-// LM Studio accepts `Authorization: Bearer <token>` once "Require
-// Authentication" is on — and then every endpoint needs it. Merged into all
-// outgoing requests; a no-op when no token is set.
+// === Connection ===
+const CONNECTION_KEY = 'scholar-connection';
+
+// Reads the saved connection, migrating a pre-0.9 install on the way: those
+// only knew about LM Studio, so its address moves into the LM Studio slot and
+// AnythingLLM is guessed at on port 3001 of the same machine. The guess is
+// only made when the old address carried an explicit port — without one the
+// address is a `tailscale serve` mapping, where a port would point at nothing.
+function loadConnection(legacySettings) {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(CONNECTION_KEY)); } catch (e) { /* ignore */ }
+
+  if (saved) {
+    state.conn = { ...state.conn, ...saved };
+  } else {
+    const legacyUrl = localStorage.getItem('lmstudio-server-url') || '';
+    const legacyToken = legacySettings?.apiToken || '';
+    if (legacyUrl) {
+      state.conn.lmsUrl = legacyUrl;
+      state.conn.lmsToken = legacyToken;
+      state.conn.allmUrl = swapPort(legacyUrl, BACKEND_DEFAULT_PORT[BACKEND.ANYTHINGLLM]);
+      // Nothing is known about an AnythingLLM key yet, so an install that was
+      // working on LM Studio keeps working on LM Studio rather than landing on
+      // a backend it has no credentials for.
+      state.conn.backend = BACKEND.LMSTUDIO;
+      saveConnection();
+    }
+  }
+
+  syncLegacyAliases();
+  syncConnectionInputs();
+}
+
+function saveConnection() {
+  localStorage.setItem(CONNECTION_KEY, JSON.stringify(state.conn));
+  syncLegacyAliases();
+}
+
+// The OpenAI-compatible request paths below (model listing, model metadata,
+// chat completions, auto-naming) all read these two, so they track the
+// LM Studio half of the connection.
+function syncLegacyAliases() {
+  state.apiBase = state.conn.lmsUrl;
+  state.apiToken = state.conn.lmsToken;
+}
+
+function currentBackend() {
+  return state.conn.backend;
+}
+
+function isAnythingLLM() {
+  return currentBackend() === BACKEND.ANYTHINGLLM;
+}
+
+// The address of whichever backend is active — what the status line and error
+// messages should name.
+function activeUrl() {
+  return isAnythingLLM() ? state.conn.allmUrl : state.conn.lmsUrl;
+}
+
+function activeKey() {
+  return isAnythingLLM() ? state.conn.allmKey : state.conn.lmsToken;
+}
+
+// Kept for the LM Studio request paths, which were written against it.
+function normalizeUrl(raw) {
+  return normalizeBase(raw);
+}
+
 function authHeaders(extra) {
   const h = { ...(extra || {}) };
   if (state.apiToken) h['Authorization'] = 'Bearer ' + state.apiToken;
   return h;
 }
 
-// === Connection ===
-function normalizeUrl(raw) {
-  let url = raw.trim();
-  if (!url) return '';
-  url = url.replace(/\/+$/, '');
-  if (!/^https?:\/\//i.test(url)) {
-    url = 'https://' + url;
-  }
-  // Whatever port is typed (or omitted) is used as-is. A `tailscale serve`
-  // setup usually maps the bare hostname — port 443 — straight to LM Studio,
-  // so forcing a default port here breaks exactly the setup it was meant to
-  // help. Omitting the port is the common remote case; ":1234" is the local one.
-  return url;
+// Brings the connection fields on both the setup screen and the Settings
+// sidebar in line with state.conn.
+function syncConnectionInputs() {
+  const c = state.conn;
+  if (setupAllmUrl) setupAllmUrl.value = c.allmUrl;
+  if (setupAllmKey) setupAllmKey.value = c.allmKey;
+  if (setupUrl) setupUrl.value = c.lmsUrl;
+  if (setupToken) setupToken.value = c.lmsToken;
+  if (sidebarAllmUrl) sidebarAllmUrl.value = c.allmUrl;
+  if (sidebarAllmKey) sidebarAllmKey.value = c.allmKey;
+  if (sidebarUrl) sidebarUrl.value = c.lmsUrl;
+  if (apiTokenInput) apiTokenInput.value = c.lmsToken;
+  syncBackendUI();
+}
+
+// Reflects the active backend across the setup screen, the sidebar, and the
+// composer, which each show a different slice of the same choice.
+function syncBackendUI() {
+  const allm = isAnythingLLM();
+  document.querySelectorAll('[data-backend-choice]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.backendChoice === currentBackend());
+  });
+  document.querySelectorAll('[data-backend-pane]').forEach(pane => {
+    pane.classList.toggle('hidden', pane.dataset.backendPane !== currentBackend());
+  });
+  // Agent mode and chat modes are AnythingLLM concepts; LM Studio has neither.
+  if (agentToggle) agentToggle.classList.toggle('hidden', !allm);
+  if (chatModeWrap) chatModeWrap.classList.toggle('hidden', !allm);
+  if (projectPickerBtn) projectPickerBtn.classList.toggle('hidden', !allm);
+  if (modelPickerWrap) modelPickerWrap.classList.toggle('hidden', allm);
+  syncAgentToggle();
 }
 
 async function connect() {
   setStatus('connecting');
+
+  if (isAnythingLLM()) {
+    const probe = await AnythingLLM.probe({ url: state.conn.allmUrl, key: state.conn.allmKey });
+    if (!probe.ok) {
+      state.connected = false;
+      setStatus('disconnected');
+      Projects.lastError = probe.error;
+      Projects.renderList();
+      // Retry silently — a laptop that woke up or a Tailscale link that came
+      // back should reconnect without the user doing anything.
+      setTimeout(connect, 5000);
+      return;
+    }
+    state.connected = true;
+    setStatus('connected');
+    await Projects.refresh();
+    await ensureActiveProject();
+    syncProjectPicker();
+    updateSendBtn();
+    return;
+  }
 
   try {
     const resp = await fetch(state.apiBase + '/v1/models', {
@@ -429,54 +586,74 @@ async function connect() {
   }
 }
 
-async function tryConnect(rawUrl) {
-  const base = normalizeUrl(rawUrl);
-  if (!base) {
-    showSetupError('Enter a URL');
+// AnythingLLM always chats through *some* workspace, so a chat that isn't in a
+// project still needs one. Rather than invent a hidden workspace, the first
+// existing workspace is adopted as the default and a "Scholar" one is created
+// only when the server has none at all.
+async function ensureActiveProject() {
+  if (!isAnythingLLM()) return null;
+  if (state.activeProjectSlug && Projects.byslug(state.activeProjectSlug)) {
+    return state.activeProjectSlug;
+  }
+  const remembered = localStorage.getItem('scholar-active-project');
+  if (remembered && Projects.byslug(remembered)) {
+    state.activeProjectSlug = remembered;
+    return remembered;
+  }
+  if (Projects.list.length) {
+    state.activeProjectSlug = Projects.list[0].slug;
+    return state.activeProjectSlug;
+  }
+  try {
+    const project = await Projects.create('Scholar');
+    state.activeProjectSlug = project.slug;
+    return project.slug;
+  } catch (err) {
+    state.activeProjectSlug = null;
+    return null;
+  }
+}
+
+// Connect from the setup screen. Probes the chosen backend and only saves the
+// address once it answers, so a typo never becomes the stored setting.
+async function tryConnect() {
+  const backend = currentBackend();
+  const allm = backend === BACKEND.ANYTHINGLLM;
+
+  // A field can hold a value with no 'input' event having fired (autofill, or
+  // showSetup() repopulating it), so read the inputs rather than trusting
+  // state to already have them.
+  if (allm) {
+    state.conn.allmUrl = normalizeBase(setupAllmUrl.value);
+    state.conn.allmKey = setupAllmKey.value.trim();
+  } else {
+    state.conn.lmsUrl = normalizeBase(setupUrl.value);
+    state.conn.lmsToken = setupToken.value.trim();
+  }
+  syncLegacyAliases();
+
+  const url = activeUrl();
+  if (!url) {
+    showSetupError('Enter your Tailscale address');
     return false;
   }
-
-  // The token field can hold a value with no 'input' event having fired yet
-  // (e.g. it was never touched after showSetup() re-populated it from state,
-  // or autofill set it) — sync it into state now so it's not silently
-  // dropped from the Authorization header on this connection attempt.
-  if (setupToken) state.apiToken = setupToken.value.trim();
 
   setupConnect.disabled = true;
   setupConnect.textContent = 'Connecting...';
   setupError.classList.add('hidden');
 
   try {
-    const resp = await fetch(base + '/v1/models', {
-      headers: authHeaders(),
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    await resp.json();
-
-    // Success — save and enter chat
-    state.apiBase = base;
-    localStorage.setItem('lmstudio-server-url', base);
-    sidebarUrl.value = rawUrl.trim();
+    const provider = PROVIDERS[backend];
+    const probe = await provider.probe({ url, key: activeKey() });
+    if (!probe.ok) {
+      showSetupError(probe.error);
+      return false;
+    }
+    saveConnection();
+    syncConnectionInputs();
     showChat();
     connect();
     return true;
-  } catch (err) {
-    // Turning on "Require Authentication" in LM Studio makes *every* endpoint
-    // need the token, so a wrong/missing one looks like a total outage.
-    if (/HTTP (401|403)/.test(err.message)) {
-      showSetupError(state.apiToken
-        ? 'Server rejected the API token. Check it is correct and still exists in LM Studio (Developer → Server Settings → Manage Tokens).'
-        : 'This server requires an API token. Create one in LM Studio (Developer → Server Settings → Manage Tokens) and paste it above.');
-    } else {
-      // Show the resolved URL: it's the fastest way to spot the address being
-      // something other than what was typed (a stale cached build, a stray
-      // port, the wrong scheme) instead of guessing at it.
-      showSetupError(
-        `Could not reach ${base}/v1/models — make sure LM Studio's server is ` +
-        `running there, CORS is enabled, and Tailscale is active on both devices.`);
-    }
-    return false;
   } finally {
     setupConnect.disabled = false;
     setupConnect.textContent = 'Connect';
@@ -506,12 +683,19 @@ function showChat() {
 function showSetup() {
   state.connected = false;
   state.messages = [];
-  state.apiBase = '';
   state.currentSessionId = null;
   state.modelCaps.vision = false;
   clearAttachments();
   closeHistory();
+  // Clear only the active backend's address — the other one's settings are
+  // still good, and re-entering them to switch back would be busywork.
+  if (isAnythingLLM()) state.conn.allmUrl = '';
+  else state.conn.lmsUrl = '';
+  state.activeProjectSlug = null;
+  Projects.list = [];
+  Projects.renderList();
   localStorage.removeItem('lmstudio-server-url');
+  saveConnection();
   setStatus('disconnected');
   modelSelect.innerHTML = '<option value="">Offline</option>';
   modelSelect.disabled = true;
@@ -527,9 +711,9 @@ function showSetup() {
   headerEl.classList.add('hidden');
   chatContainer.classList.add('hidden');
   inputArea.classList.add('hidden');
-  setupUrl.value = '';
+  syncConnectionInputs();
   setupError.classList.add('hidden');
-  setupUrl.focus();
+  (isAnythingLLM() ? setupAllmUrl : setupUrl).focus();
 }
 
 // === Chat ===
@@ -1251,6 +1435,155 @@ function renderMessage(text) {
   return renderMarkdown(text);
 }
 
+// === Project picker / agent mode / chat mode ===
+// On AnythingLLM the thing you pick before typing is a project, not a model —
+// the workspace decides which model runs and which documents are in scope. So
+// the composer swaps the model picker for a project picker, keeping the same
+// control in the same place.
+
+function activeProjectName() {
+  const project = Projects.byslug(state.activeProjectSlug);
+  return project ? project.name : 'No project';
+}
+
+function syncProjectPicker() {
+  if (!projectPickerBtn || !projectPickerLabel) return;
+  projectPickerBtn.disabled = !state.connected;
+  projectPickerLabel.textContent = state.connected ? activeProjectName() : 'Offline';
+  Projects.renderList();
+}
+
+function openProjectPicker() {
+  if (!state.connected) return;
+  renderProjectPicker();
+  projectModal.classList.remove('hidden');
+}
+
+function closeProjectPicker() {
+  projectModal.classList.add('hidden');
+}
+
+function renderProjectPicker() {
+  projectPickerList.innerHTML = '';
+
+  // Below 520px the composer has no room for the chat-mode pill, so the mode
+  // lives here instead. Rendered only when the pill is actually hidden, so
+  // wider screens don't get the same control twice.
+  if (window.matchMedia('(max-width: 520px)').matches) {
+    const label = document.createElement('div');
+    label.className = 'picker-mode-label';
+    label.textContent = 'Answer mode';
+    projectPickerList.appendChild(label);
+
+    const row = document.createElement('div');
+    row.className = 'picker-mode-row';
+    CHAT_MODES.forEach(mode => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'picker-mode-btn' + (mode.id === state.chatMode ? ' selected' : '');
+      btn.textContent = mode.label;
+      btn.title = mode.hint;
+      btn.addEventListener('click', () => {
+        state.chatMode = mode.id;
+        saveSettings();
+        syncAgentToggle();
+        renderProjectPicker();
+      });
+      row.appendChild(btn);
+    });
+    projectPickerList.appendChild(row);
+  }
+
+  Projects.list.forEach(project => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'model-picker-item' + (project.slug === state.activeProjectSlug ? ' selected' : '');
+
+    const name = document.createElement('div');
+    name.className = 'model-picker-name';
+    name.textContent = project.name;
+
+    const meta = document.createElement('div');
+    meta.className = 'model-picker-meta';
+    const chats = state.sessions.filter(s => s.projectSlug === project.slug).length;
+    const docs = Projects.docCache[project.slug]?.length;
+    const bits = [];
+    if (docs != null) bits.push(`${docs} document${docs === 1 ? '' : 's'}`);
+    bits.push(`${chats} chat${chats === 1 ? '' : 's'}`);
+    if (project.instructions) bits.push('custom instructions');
+    meta.textContent = bits.join(' · ');
+
+    row.append(name, meta);
+    row.addEventListener('click', () => {
+      selectProject(project.slug);
+      closeProjectPicker();
+    });
+    projectPickerList.appendChild(row);
+  });
+
+  const create = document.createElement('button');
+  create.type = 'button';
+  create.className = 'model-picker-item model-picker-action';
+  create.innerHTML = '<div class="model-picker-name">+ New project…</div>' +
+    '<div class="model-picker-meta">A workspace with its own documents and instructions</div>';
+  create.addEventListener('click', () => {
+    closeProjectPicker();
+    Projects.promptCreate();
+  });
+  projectPickerList.appendChild(create);
+}
+
+// Switching project mid-chat would leave the chat's thread pointing at a
+// different workspace, so it only takes effect for chats that haven't started.
+function selectProject(slug) {
+  state.activeProjectSlug = slug;
+  localStorage.setItem('scholar-active-project', slug || '');
+  const session = state.sessions.find(s => s.id === state.currentSessionId);
+  if (!session || !session.messages?.length) {
+    if (session) { session.projectSlug = slug; session.threadSlug = null; persistSessions(); }
+  }
+  syncProjectPicker();
+  renderHistoryList();
+}
+
+function syncAgentToggle() {
+  if (!agentToggle) return;
+  agentToggle.classList.toggle('active', state.agentMode);
+  agentToggle.setAttribute('aria-pressed', String(state.agentMode));
+  agentToggle.title = state.agentMode
+    ? 'Agent mode on — Scholar can search and read the web before answering'
+    : 'Agent mode off — click to let Scholar browse the web';
+  if (chatModeLabel) {
+    const mode = CHAT_MODES.find(m => m.id === state.chatMode);
+    chatModeLabel.textContent = mode ? mode.label : 'Chat';
+  }
+}
+
+function toggleAgentMode() {
+  state.agentMode = !state.agentMode;
+  saveSettings();
+  syncAgentToggle();
+}
+
+function openChatModeMenu() {
+  chatModeMenu.innerHTML = '';
+  CHAT_MODES.forEach(mode => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'chat-mode-item' + (mode.id === state.chatMode ? ' selected' : '');
+    item.innerHTML = `<span class="chat-mode-item-name">${escapeHtml(mode.label)}</span>` +
+      `<span class="chat-mode-item-hint">${escapeHtml(mode.hint)}</span>`;
+    item.addEventListener('click', () => {
+      state.chatMode = mode.id;
+      saveSettings();
+      syncAgentToggle();
+      chatModeMenu.classList.add('hidden');
+    });
+    chatModeMenu.appendChild(item);
+  });
+  chatModeMenu.classList.remove('hidden');
+}
+
 // === Syntax highlighting (dependency-free) ===
 const HL_KEYWORDS = {
   js: 'const let var function return if else for while do switch case break continue new class extends super this typeof instanceof in of try catch finally throw async await yield import export from default null undefined true false void delete static get set',
@@ -1530,6 +1863,146 @@ function regenerate() {
   generateReply();
 }
 
+// === AnythingLLM turn building ===
+
+// AnythingLLM keeps the thread's history itself, so a normal turn sends only
+// the new message and nothing else. That stops being true whenever the local
+// transcript stops matching the server's — after an edit or a regenerate
+// (which rewrite history), after opening a chat saved before its thread
+// existed, or when thread creation failed and a new one had to be made. In
+// those cases the thread is reset and the surviving turns are replayed as a
+// single transcript message, which costs one request instead of one per turn.
+function buildAnythingLLMTurn(session, threadSlug) {
+  const messages = state.messages;
+  const latest = extractText(messages[messages.length - 1]?.content || '');
+  const priorCount = messages.length - 1;
+
+  const inSync = session &&
+    session.syncedBackend === BACKEND.ANYTHINGLLM &&
+    session.syncedTo === priorCount &&
+    session.threadSlug === threadSlug &&
+    !!threadSlug;
+
+  if (inSync) return { message: latest, reset: false };
+  if (priorCount <= 0) return { message: latest, reset: true };
+
+  const transcript = messages.slice(0, priorCount)
+    .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${extractText(m.content)}`)
+    .join('\n\n');
+
+  return {
+    message: `[Earlier in this conversation]\n\n${transcript}\n\n[Current message]\n\n${latest}`,
+    reset: true,
+  };
+}
+
+// Images go to AnythingLLM as attachments so vision models can see them.
+// Text and PDF attachments are already inlined into the message by
+// buildApiContent, which is both simpler and more reliable than round-tripping
+// them through AnythingLLM's document parser for a one-off question.
+function buildAnythingLLMAttachments() {
+  const last = state.messages[state.messages.length - 1];
+  const content = last?.content;
+  if (!Array.isArray(content)) return [];
+  return content
+    .filter(part => part.type === 'image_url' && part.image_url?.url?.startsWith('data:'))
+    .map((part, i) => {
+      const mime = part.image_url.url.slice(5, part.image_url.url.indexOf(';')) || 'image/png';
+      return {
+        name: `image-${i + 1}.${(mime.split('/')[1] || 'png')}`,
+        mime,
+        contentString: part.image_url.url,
+      };
+    });
+}
+
+// === Agent trail & citations ===
+
+// The running list of agent steps ("searching the web for…", "reading
+// example.com") that AnythingLLM emits while an agent works. It sits above the
+// reply and collapses once the answer starts, so a finished chat isn't buried
+// in process.
+function agentTrail(body) {
+  let box = body.querySelector('.agent-trail');
+  if (box) return box._trail;
+
+  box = document.createElement('details');
+  box.className = 'agent-trail';
+  box.open = true;
+
+  const summary = document.createElement('summary');
+  summary.className = 'agent-trail-summary';
+  summary.innerHTML = '<span class="agent-trail-spinner"></span><span class="agent-trail-title">Working…</span>';
+
+  const list = document.createElement('ol');
+  list.className = 'agent-trail-steps';
+
+  box.append(summary, list);
+  body.insertBefore(box, body.firstChild);
+
+  let count = 0;
+  box._trail = {
+    add(text) {
+      count++;
+      const li = document.createElement('li');
+      li.textContent = text;
+      list.appendChild(li);
+      summary.querySelector('.agent-trail-title').textContent =
+        `${count} step${count === 1 ? '' : 's'}`;
+    },
+    done() {
+      box.open = false;
+      box.classList.add('finished');
+      summary.querySelector('.agent-trail-spinner')?.remove();
+      summary.querySelector('.agent-trail-title').textContent =
+        count ? `Used ${count} step${count === 1 ? '' : 's'}` : 'No steps';
+    },
+  };
+  return box._trail;
+}
+
+// Document chunks the answer drew on. AnythingLLM returns the matching text
+// with each citation, so the snippet goes in the title rather than being
+// thrown away — it is the fastest way to see whether a citation is real.
+function renderSources(body, sources) {
+  const seen = new Set();
+  const unique = [];
+  sources.forEach(s => {
+    const title = s.title || s.docpath || s.url || 'Source';
+    if (seen.has(title)) return;
+    seen.add(title);
+    unique.push({ title, text: s.text || s.chunk || '', url: s.url || '' });
+  });
+  if (!unique.length) return;
+
+  const box = document.createElement('details');
+  box.className = 'sources-box';
+  const summary = document.createElement('summary');
+  summary.textContent = `${unique.length} source${unique.length === 1 ? '' : 's'}`;
+  box.appendChild(summary);
+
+  const list = document.createElement('ul');
+  list.className = 'sources-list';
+  unique.forEach(s => {
+    const li = document.createElement('li');
+    // A scraped page keeps its link; an uploaded document has none.
+    if (/^https?:\/\//i.test(s.url)) {
+      const a = document.createElement('a');
+      a.href = s.url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = s.title;
+      li.appendChild(a);
+    } else {
+      li.textContent = s.title;
+    }
+    if (s.text) li.title = s.text.slice(0, 500);
+    list.appendChild(li);
+  });
+  box.appendChild(list);
+  body.appendChild(box);
+}
+
 // Generate an assistant reply for the current state.messages.
 async function generateReply() {
   // Model selection is purely whatever's in the dropdown — no auto-switching.
@@ -1600,104 +2073,134 @@ async function generateReply() {
     return renderer;
   };
 
+  // Painting is shared by both backends, so only the request differs below.
+  // Reasoning is rendered inline ahead of the answer, separated by a blank
+  // line the first time the answer starts.
+  const onFirstToken = () => {
+    if (firstTokenAt) return;
+    firstTokenAt = performance.now();
+    state.lastLoadedModel = targetModel;
+    clearSlow();
+    startRenderer();
+  };
+  const pushReasoning = (t) => {
+    if (!t) return;
+    onFirstToken();
+    reasoning += t;
+    deltaCount++;
+    renderer.push(t);
+  };
+  const pushAnswer = (t) => {
+    if (!t) return;
+    onFirstToken();
+    const separator = (reasoning && !fullContent) ? '\n\n' : '';
+    fullContent += t;
+    deltaCount++;
+    renderer.push(separator + t);
+  };
+
   try {
-    const payload = {
-      model: targetModel || undefined,
-      messages: apiMessages,
-      temperature: parseFloat(tempSlider.value),
-      max_tokens: parseInt(tokensSlider.value),
-      stream: useStream,
-    };
-
-    const resp = await fetch(state.apiBase + '/v1/chat/completions', {
-      method: 'POST',
-      headers: authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify(payload),
-      signal: state.abortController.signal,
-    });
-
-    if (!resp.ok) {
-      const errText = await resp.text().catch(() => '');
-      throw new Error(`HTTP ${resp.status}: ${errText || resp.statusText}`);
-    }
-
-    if (useStream) {
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      // The SSE frame loop does nothing but parse and accumulate. Painting is
-      // the renderer's job and happens at most once per animation frame, so
-      // chunk arrival rate no longer drives DOM work.
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith('data:')) continue;
-          const data = trimmed.slice(5).trim();
-          if (!data || data === '[DONE]') continue;
-
-          let chunk;
-          try {
-            chunk = JSON.parse(data);
-          } catch (e) {
-            continue; // partial or non-JSON keepalive line
-          }
-
-          if (chunk.error) {
-            throw new Error(chunk.error.message || 'Stream error');
-          }
-          if (chunk.usage) usage = chunk.usage;
-          if (chunk.choices?.[0]?.finish_reason) finishReason = chunk.choices[0].finish_reason;
-
-          const delta = chunk.choices?.[0]?.delta || {};
-          let added = '';
-          if (delta.reasoning_content) { reasoning += delta.reasoning_content; added += delta.reasoning_content; }
-          if (delta.content) {
-            // Keep the display order (reasoning, then answer) intact the first
-            // time the answer starts after a reasoning block.
-            if (reasoning && !fullContent) added += '\n\n';
-            fullContent += delta.content;
-            added += delta.content;
-          }
-          if (!added) continue;
-
-          if (!firstTokenAt) {
-            firstTokenAt = performance.now();
-            state.lastLoadedModel = targetModel;
-            clearSlow();
-            startRenderer();
-          }
-          deltaCount++;
-          renderer.push(added);
-        }
+    if (isAnythingLLM()) {
+      const session = state.sessions.find(s => s.id === state.currentSessionId);
+      const slug = session?.projectSlug || state.activeProjectSlug;
+      if (!slug) {
+        throw new Error('No project selected. Pick or create one from the picker next to Send — ' +
+                        'AnythingLLM always chats through a workspace.');
       }
 
-      // A stream that closed without ever sending content still needs to say
-      // something — the placeholder dots are gone by now either way.
+      // The thread is created on the first send rather than when the chat is
+      // opened, so opening a chat never needs the network. A failure here is
+      // not fatal: the workspace endpoint partitions by sessionId instead,
+      // which still keeps this chat's history separate from every other one.
+      const threadSlug = session ? await Projects.ensureThread(session) : null;
+      const turn = buildAnythingLLMTurn(session, threadSlug);
+
+      // Agent mode is the whole reason web browsing works: `@agent` is what
+      // AnythingLLM's REST handler checks to start the agent cluster, which is
+      // where the web-search and scraping skills live.
+      const message = state.agentMode && !/^@agent\b/i.test(turn.message)
+        ? '@agent ' + turn.message
+        : turn.message;
+
+      // The trail is created on the first thought rather than up front, so a
+      // turn that never uses a tool shows no empty step list.
+      let trail = null;
+      const trailFor = () => (trail || (trail = agentTrail(body)));
+      let sources = null;
+
+      await AnythingLLM.stream({
+        url: state.conn.allmUrl,
+        key: state.conn.allmKey,
+        slug,
+        threadSlug,
+        message,
+        mode: state.agentMode ? 'chat' : state.chatMode,
+        attachments: buildAnythingLLMAttachments(),
+        reset: turn.reset,
+        signal: state.abortController.signal,
+        onDelta: pushAnswer,
+        onReasoning: pushReasoning,
+        onThought: (t) => {
+          clearSlow();
+          trailFor().add(t);
+          scrollToBottom();
+        },
+        onSources: (s) => { sources = s; },
+        onMetrics: (m) => {
+          // AnythingLLM reports prompt/completion token counts under the same
+          // names the stats line already understands.
+          if (m && (m.prompt_tokens != null || m.completion_tokens != null)) usage = m;
+        },
+      });
+
+      if (trail) trail.done();
       if (!fullContent && !reasoning) {
         fullContent = '(empty response)';
         bubble.innerHTML = renderMessage(fullContent);
       } else {
         startRenderer().finish();
       }
+      if (sources?.length) renderSources(body, sources);
+
+      // The server now holds everything the client does, plus the reply it is
+      // about to append.
+      if (session) {
+        session.syncedTo = state.messages.length + 1;
+        session.syncedBackend = BACKEND.ANYTHINGLLM;
+      }
     } else {
-      const data = await resp.json();
-      usage = data.usage || null;
-      finishReason = data.choices?.[0]?.finish_reason || null;
-      const msg = data.choices?.[0]?.message || {};
-      reasoning = msg.reasoning_content || '';
-      fullContent = msg.content || (reasoning ? '' : '(empty response)');
-      state.lastLoadedModel = targetModel;
-      bubble.innerHTML = renderMessage(reasoning ? `${reasoning}\n\n${fullContent}` : fullContent);
-      addCopyButtons(bubble);
-      scrollToBottom();
+      const payload = {
+        model: targetModel || undefined,
+        messages: apiMessages,
+        temperature: parseFloat(tempSlider.value),
+        max_tokens: parseInt(tokensSlider.value),
+        stream: useStream,
+      };
+
+      await LMStudio.stream({
+        url: state.conn.lmsUrl,
+        key: state.conn.lmsToken,
+        model: payload.model,
+        messages: apiMessages,
+        temperature: payload.temperature,
+        maxTokens: payload.max_tokens,
+        useStream,
+        signal: state.abortController.signal,
+        onDelta: pushAnswer,
+        onReasoning: pushReasoning,
+        onMetrics: (u) => { usage = u; },
+        onFinishReason: (r) => { finishReason = r; },
+      });
+
+      // The non-streaming path lands in one piece rather than in tokens, but
+      // it arrives through the same callbacks, so the renderer already holds
+      // it and only needs finishing.
+      if (!fullContent && !reasoning) {
+        fullContent = '(empty response)';
+        bubble.innerHTML = renderMessage(fullContent);
+      } else {
+        startRenderer().finish();
+      }
     }
 
     if (finishReason === 'length') {
@@ -1929,6 +2432,34 @@ async function maybeAutoName() {
 
   const userText = extractText(state.messages.find(m => m.role === 'user')?.content || '').slice(0, 400);
   const aiText = extractText(state.messages.find(m => m.role === 'assistant')?.content || '').slice(0, 400);
+  const prompt = `Write a short title (3-5 words) summarizing this conversation. Reply with ONLY the title — no quotes, no punctuation around it, no explanation.\n\nUser: ${userText}\nAssistant: ${aiText}`;
+
+  if (isAnythingLLM()) {
+    const slug = session.projectSlug || state.activeProjectSlug;
+    if (!slug) return;
+    try {
+      // Named on the workspace rather than the chat's own thread, so the
+      // titling prompt never lands in the conversation the user is reading.
+      // The scratch session is reset afterwards so it doesn't accumulate.
+      let title = '';
+      await AnythingLLM.stream({
+        url: state.conn.allmUrl, key: state.conn.allmKey, slug,
+        threadSlug: null, message: prompt, mode: 'chat',
+        onDelta: (t) => { title += t; },
+        signal: AbortSignal.timeout(60000),
+      });
+      title = cleanAutoTitle(title);
+      if (!title) return;
+      session.title = title;
+      persistSessions();
+      renderHistoryList();
+    } catch (e) { /* best-effort — the first-message title stays */ }
+    finally {
+      AnythingLLM.resetThread({ url: state.conn.allmUrl, key: state.conn.allmKey, slug, threadSlug: null });
+    }
+    return;
+  }
+
   const namingModel = activeModelId();
   try {
     const resp = await fetch(state.apiBase + '/v1/chat/completions', {
@@ -1945,17 +2476,23 @@ async function maybeAutoName() {
     });
     if (!resp.ok) return;
     const data = await resp.json();
-    let title = data.choices?.[0]?.message?.content || '';
-    // Strip any thinking/special tokens, take the last non-empty line
-    title = title.replace(/<think(?:ing)?>[\s\S]*?(<\/think(?:ing)?>|$)/gi, '');
-    title = stripSpecialTokens(title);
-    const lines = title.split('\n').map(l => l.trim()).filter(Boolean);
-    title = (lines[lines.length - 1] || '').replace(/^["'“”]+|["'“”.]+$/g, '').trim();
-    if (!title || title.length > 80) return;
+    const title = cleanAutoTitle(data.choices?.[0]?.message?.content || '');
+    if (!title) return;
     session.title = title;
     persistSessions();
     renderHistoryList();
   } catch (e) { /* best-effort — placeholder title stays */ }
+}
+
+// Models that think before answering wrap the answer in reasoning and often
+// add a preamble, so the title is the last non-empty line with the thinking,
+// special tokens, and surrounding quotes stripped off.
+function cleanAutoTitle(raw) {
+  let title = (raw || '').replace(/<think(?:ing)?>[\s\S]*?(<\/think(?:ing)?>|$)/gi, '');
+  title = stripSpecialTokens(title);
+  const lines = title.split('\n').map(l => l.trim()).filter(Boolean);
+  title = (lines[lines.length - 1] || '').replace(/^["'“”]+|["'“”.]+$/g, '').trim();
+  return (!title || title.length > 80) ? '' : title;
 }
 
 // === HTML preview (artifacts-lite) ===
@@ -1977,10 +2514,13 @@ function stopStreaming() {
   if (state.abortController) state.abortController.abort();
 }
 
-function newChat() {
+// `keepProject` is set when the new chat was started from a project tile, so
+// the click that chose the project isn't undone by the reset that follows it.
+function newChat(opts) {
   state.messages = [];
   state.currentSessionId = null;
   state.chatFullyLoaded = false;
+  if (!opts?.keepProject && isAnythingLLM()) syncProjectPicker();
   clearAttachments();
   messagesEl.innerHTML = '';
   if (welcome) messagesEl.appendChild(welcome);
@@ -2037,6 +2577,12 @@ function saveCurrentSession() {
   if (!session) {
     session = { id: 'c' + now.toString(36) + Math.random().toString(36).slice(2, 7), createdAt: now };
     state.currentSessionId = session.id;
+    // A chat is bound to whichever project was active when it started, and
+    // keeps it — switching projects later must not silently move an existing
+    // conversation into a different workspace's documents.
+    session.projectSlug = isAnythingLLM() ? state.activeProjectSlug : null;
+    session.threadSlug = null;
+    session.backend = currentBackend();
     // Apply folder assignment to new sessions
     if (state.nextChatFolderId) {
       session.folderId = state.nextChatFolderId;
@@ -2068,6 +2614,13 @@ function loadSession(id) {
   state.deleteConfirmSessionId = null;
   state.messages = JSON.parse(JSON.stringify(session.messages || []));
   clearAttachments();
+
+  // Follow the chat into its project, so the composer and the picker describe
+  // what this conversation is actually talking to.
+  if (session.projectSlug && Projects.byslug(session.projectSlug)) {
+    state.activeProjectSlug = session.projectSlug;
+    syncProjectPicker();
+  }
 
   // Restore the chat's model if it's still loaded in LM Studio.
   const opt = session.model && [...modelSelect.options].find(o => o.value === session.model);
@@ -2963,13 +3516,40 @@ function buildApiContent(text, attachments) {
 // === Events ===
 function setupListeners() {
   // Setup screen
-  setupConnect.addEventListener('click', () => tryConnect(setupUrl.value));
-  setupUrl.addEventListener('keydown', e => {
-    if (e.key === 'Enter') tryConnect(setupUrl.value);
+  setupConnect.addEventListener('click', () => tryConnect());
+  [setupUrl, setupToken, setupAllmUrl, setupAllmKey].forEach(el => {
+    if (!el) return;
+    el.addEventListener('keydown', e => { if (e.key === 'Enter') tryConnect(); });
   });
   useLocalhost.addEventListener('click', () => {
-    setupUrl.value = 'localhost:1234';
-    tryConnect('localhost:1234');
+    setupUrl.value = 'http://localhost:1234';
+    tryConnect();
+  });
+  if (useAllmLocal) {
+    useAllmLocal.addEventListener('click', () => {
+      setupAllmUrl.value = 'http://localhost:3001';
+      tryConnect();
+    });
+  }
+
+  // Backend switch, on both the setup screen and the sidebar. Switching is
+  // just a state change plus a reconnect — both backends keep their own saved
+  // address and key, so nothing is re-entered.
+  document.querySelectorAll('[data-backend-choice]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const next = btn.dataset.backendChoice;
+      if (next === state.conn.backend) return;
+      state.conn.backend = next;
+      saveConnection();
+      syncBackendUI();
+      setupError.classList.add('hidden');
+      // Only reconnect from the sidebar; on the setup screen the user still
+      // has to press Connect, and probing a half-typed address is noise.
+      if (btn.dataset.backendScope === 'sidebar') {
+        state.connected = false;
+        if (activeUrl()) connect(); else showSetup();
+      }
+    });
   });
 
   // Sidebar
@@ -2980,28 +3560,48 @@ function setupListeners() {
   sidebarReconn.addEventListener('click', () => {
     const raw = sidebarUrl.value.trim();
     if (!raw) return;
-    const base = normalizeUrl(raw);
-    state.apiBase = base;
+    state.conn.lmsUrl = normalizeBase(raw);
+    state.conn.lmsToken = apiTokenInput ? apiTokenInput.value.trim() : state.conn.lmsToken;
+    state.conn.backend = BACKEND.LMSTUDIO;
     state.connected = false;
-    localStorage.setItem('lmstudio-server-url', base);
+    saveConnection();
+    syncConnectionInputs();
     connect();
     closeSidebar();
   });
 
-  // Both token fields (Settings and the setup screen) drive the same value —
-  // the setup one exists so a bad token is still fixable while disconnected,
-  // when Settings is unreachable.
-  const syncToken = (from, to) => {
-    state.apiToken = from.value.trim();
-    if (to) to.value = from.value;
-    saveSettings();
+  if (sidebarAllmReconnect) {
+    sidebarAllmReconnect.addEventListener('click', () => {
+      const raw = sidebarAllmUrl.value.trim();
+      if (!raw) return;
+      state.conn.allmUrl = normalizeBase(raw);
+      state.conn.allmKey = sidebarAllmKey.value.trim();
+      state.conn.backend = BACKEND.ANYTHINGLLM;
+      state.connected = false;
+      saveConnection();
+      syncConnectionInputs();
+      connect();
+      closeSidebar();
+    });
+  }
+
+  // The credential fields exist in two places — Settings and the setup screen
+  // — so a bad key is still fixable while disconnected, when Settings is
+  // unreachable. Each pair edits one value.
+  const mirror = (from, to, apply) => {
+    if (!from) return;
+    from.addEventListener('input', () => {
+      apply(from.value.trim());
+      if (to) to.value = from.value;
+      saveConnection();
+    });
   };
-  if (apiTokenInput) {
-    apiTokenInput.addEventListener('input', () => syncToken(apiTokenInput, setupToken));
-  }
-  if (setupToken) {
-    setupToken.addEventListener('input', () => syncToken(setupToken, apiTokenInput));
-  }
+  mirror(apiTokenInput, setupToken, v => { state.conn.lmsToken = v; syncLegacyAliases(); });
+  mirror(setupToken, apiTokenInput, v => { state.conn.lmsToken = v; syncLegacyAliases(); });
+  mirror(sidebarAllmKey, setupAllmKey, v => { state.conn.allmKey = v; });
+  mirror(setupAllmKey, sidebarAllmKey, v => { state.conn.allmKey = v; });
+  mirror(sidebarAllmUrl, setupAllmUrl, v => { state.conn.allmUrl = normalizeBase(v); });
+  mirror(setupAllmUrl, sidebarAllmUrl, v => { state.conn.allmUrl = normalizeBase(v); });
 
   // "Show" reveals the token so it can be checked against LM Studio. Each
   // button names its field via data-token-for; the two fields toggle
@@ -3022,6 +3622,32 @@ function setupListeners() {
     closeSidebar();
     showSetup();
   });
+
+  // Project picker (AnythingLLM) — occupies the same composer slot the model
+  // picker uses on LM Studio.
+  if (projectPickerBtn) projectPickerBtn.addEventListener('click', openProjectPicker);
+  if (projectModalClose) projectModalClose.addEventListener('click', closeProjectPicker);
+  if (projectModal) projectModal.addEventListener('click', e => {
+    if (e.target === projectModal) closeProjectPicker();
+  });
+
+  if (agentToggle) agentToggle.addEventListener('click', toggleAgentMode);
+
+  if (chatModeBtn) {
+    chatModeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (chatModeMenu.classList.contains('hidden')) openChatModeMenu();
+      else chatModeMenu.classList.add('hidden');
+    });
+  }
+  document.addEventListener('click', (e) => {
+    if (chatModeMenu && !chatModeMenu.classList.contains('hidden') &&
+        !chatModeMenu.contains(e.target) && e.target !== chatModeBtn) {
+      chatModeMenu.classList.add('hidden');
+    }
+  });
+
+  if (codeViewBtn) codeViewBtn.addEventListener('click', () => ScholarCode.toggle());
 
   // Settings
   tempSlider.addEventListener('input', () => { tempValue.textContent = tempSlider.value; saveSettings(); });
@@ -3147,7 +3773,9 @@ function setupListeners() {
 
   // Reconnect when tab becomes visible
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && state.apiBase && !state.connected && !state.streaming) connect();
+    // activeUrl(), not state.apiBase — the latter only tracks LM Studio, so an
+    // AnythingLLM-only setup would never reconnect on focus.
+    if (!document.hidden && activeUrl() && !state.connected && !state.streaming) connect();
   });
 
   // Tie #app's actual height to the real visible viewport instead of a CSS

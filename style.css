@@ -1364,13 +1364,35 @@ pre:has(.preview-btn) .copy-btn { right: 72px; }
    whole, which would drift off if those two edge groups differ in width
    (they do: Send/Stop went from a fixed circular icon to a wider text pill). */
 .composer-controls {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+  /* Flex rather than a fixed 3-column grid: the control count changes with
+     the backend (agent toggle and chat mode only exist on AnythingLLM), and a
+     grid with more items than columns silently wraps Send onto its own row.
+     Here only the status group flexes, so everything stays on one line and the
+     project name ellipsises instead of pushing Send down. */
+  display: flex;
   align-items: center;
   gap: 6px;
   padding: 0 8px;
   position: relative;
 }
+.composer-controls > *:not(.composer-status-group) { flex-shrink: 0; }
+.composer-status-group { flex: 1 1 auto; }
+/* A long project or model name shrinks with an ellipsis rather than growing
+   the row. Every ancestor between the flex line and the text needs min-width:0
+   — without it a flex item refuses to shrink below its content, so the label
+   pushes into Send and gets clipped mid-word instead of ellipsising. */
+/* .model-dropdown sets flex-shrink:0, so without this the picker keeps its
+   full width inside a narrower status group. The group centres its content,
+   so the excess spilled out both sides — the status dot landed on top of the
+   agent toggle and the project name ran under Send. */
+.composer-status-group .model-picker-btn { min-width: 0; flex-shrink: 1; }
+.composer-status-group .model-picker-btn > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-status-group .model-picker-chevron { flex-shrink: 0; }
 
 .composer-status-group {
   display: flex;
@@ -2260,4 +2282,781 @@ body.resizing-panel { cursor: ew-resize; user-select: none; }
 /* === Desktop === */
 @media (min-width: 768px) {
   #messages { padding: 24px 24px 12px; }
+}
+
+/* ============================================================
+   v0.9.0 — AnythingLLM backend, Projects, agents, Scholar Code
+   Everything below reuses the existing aqua kit (gloss, bevels,
+   --accent) so the new surfaces read as the same app.
+   ============================================================ */
+
+/* --- Backend switch (setup screen + sidebar) --- */
+.backend-switch {
+  display: flex;
+  gap: 0;
+  margin-bottom: 18px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+  background: var(--bg-input);
+  box-shadow: var(--shadow-sunken);
+}
+.backend-choice {
+  flex: 1;
+  padding: 8px 10px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.backend-choice:hover { color: var(--text-secondary); }
+.backend-choice.active {
+  background: linear-gradient(to bottom, var(--accent-hover), var(--accent) 60%, #1fb8c9);
+  color: #04262b;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 8px var(--accent-glow), 0 1px 1px rgba(255, 255, 255, 0.35) inset;
+}
+
+/* --- Projects section in the Chats panel --- */
+.projects-section {
+  margin: 6px 0 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.projects-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 6px;
+}
+.projects-header h4 {
+  font-size: 0.7rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+.projects-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.projects-empty {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  padding: 4px 6px 0;
+  line-height: 1.45;
+}
+.project-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.project-row:hover { background: var(--bg-hover); }
+.project-item.active .project-row {
+  background: var(--bg-lift);
+  box-shadow: 0 0 0 1px var(--accent-dim) inset;
+}
+.project-icon { display: flex; color: var(--accent); flex-shrink: 0; }
+.project-name {
+  flex: 1;
+  font-size: 0.86rem;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-count {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  background: var(--bg-input);
+  border-radius: 999px;
+  padding: 1px 7px;
+  min-width: 18px;
+  text-align: center;
+}
+.project-count:empty { display: none; }
+.project-settings { opacity: 0; transition: opacity 0.12s; flex-shrink: 0; }
+.project-row:hover .project-settings,
+.project-item.active .project-settings { opacity: 0.75; }
+.project-settings:hover { opacity: 1; }
+
+/* --- Project detail modal --- */
+.project-panel { max-width: 620px; height: auto; max-height: 86vh; }
+.project-body { padding: 16px 18px 20px; overflow-y: auto; }
+.project-section { margin-bottom: 22px; }
+.project-section h4 {
+  font-size: 0.78rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 5px;
+}
+.project-section textarea {
+  width: 100%;
+  margin: 8px 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.86rem;
+  resize: vertical;
+  box-shadow: var(--shadow-sunken);
+}
+.project-drop-zone {
+  margin-top: 10px;
+  border: 1px dashed var(--accent-dim);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  background: rgba(16, 29, 42, 0.5);
+  transition: border-color 0.15s, background 0.15s;
+}
+.project-drop-zone.drag-over {
+  border-color: var(--accent);
+  background: var(--bg-lift);
+}
+.project-doc-list { list-style: none; display: flex; flex-direction: column; gap: 3px; }
+.project-doc {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+}
+.project-doc-name {
+  flex: 1;
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-doc-meta { font-size: 0.72rem; color: var(--text-muted); flex-shrink: 0; }
+.project-doc-remove { opacity: 0.55; flex-shrink: 0; }
+.project-doc-remove:hover { opacity: 1; color: var(--danger); }
+.project-doc-empty {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  padding: 2px 2px 8px;
+}
+.project-doc-actions { margin-top: 10px; }
+.project-drop-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 8px;
+}
+.project-link-row { display: flex; gap: 8px; margin-top: 12px; }
+.project-link-row input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 7px 14px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.82rem;
+  box-shadow: var(--shadow-sunken);
+}
+.project-status {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  min-height: 1.2em;
+  margin-bottom: 14px;
+}
+.project-status.ok { color: var(--accent); }
+.project-status.error { color: var(--danger); }
+.project-danger { border-top: 1px solid var(--border); padding-top: 16px; margin-bottom: 0; }
+
+/* --- Composer: agent toggle + chat mode --- */
+.agent-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.agent-toggle:hover { color: var(--text-secondary); }
+.agent-toggle.active {
+  color: #04262b;
+  background: linear-gradient(to bottom, var(--accent-hover), var(--accent) 60%, #1fb8c9);
+  border-color: #1a9aa8;
+  box-shadow: 0 0 12px var(--accent-glow), 0 1px 1px rgba(255, 255, 255, 0.35) inset;
+}
+.chat-mode-wrap { position: relative; flex-shrink: 0; }
+.chat-mode-btn {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 12px;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-sunken);
+}
+.chat-mode-btn:hover { color: var(--text-primary); }
+.chat-mode-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 60;
+  min-width: 260px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+  padding: 5px;
+}
+.chat-mode-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text-primary);
+}
+.chat-mode-item:hover { background: var(--bg-hover); }
+.chat-mode-item.selected { background: var(--bg-lift); }
+.chat-mode-item-name { display: block; font-size: 0.84rem; font-weight: 600; }
+.chat-mode-item-hint { display: block; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px; }
+
+/* --- Agent step trail --- */
+.agent-trail {
+  margin: 0 0 10px;
+  border: 1px solid var(--accent-dim);
+  border-radius: var(--radius-sm);
+  background: rgba(16, 29, 42, 0.6);
+  overflow: hidden;
+}
+.agent-trail-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 11px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--accent);
+  list-style: none;
+}
+.agent-trail-summary::-webkit-details-marker { display: none; }
+.agent-trail-spinner {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-dim);
+  border-top-color: var(--accent);
+  animation: agent-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes agent-spin { to { transform: rotate(360deg); } }
+.agent-trail.finished .agent-trail-summary { color: var(--text-muted); }
+.agent-trail-steps {
+  list-style: decimal inside;
+  padding: 2px 12px 10px;
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+.agent-trail-steps li { margin-bottom: 3px; }
+
+/* --- Citations --- */
+.sources-box {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.sources-box summary {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.sources-list {
+  list-style: none;
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sources-list li {
+  font-size: 0.73rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  color: var(--text-secondary);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sources-list a { color: var(--accent); text-decoration: none; }
+.sources-list a:hover { text-decoration: underline; }
+
+/* --- Scholar Code --- */
+.code-view {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+}
+.code-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--header-height);
+  padding: 0 14px;
+  padding-top: var(--safe-top);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+.code-title {
+  font-family: 'Matoran', var(--font-ui, inherit);
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+.code-status { flex: 1; font-size: 0.76rem; color: var(--text-muted); }
+.code-status.ok { color: var(--accent); }
+.code-status.error { color: var(--danger); }
+.code-header-actions { display: flex; align-items: center; gap: 8px; }
+
+.code-body { flex: 1; display: flex; min-height: 0; }
+.code-sidebar {
+  width: 210px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.code-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 6px;
+}
+.code-sidebar-head h4 {
+  font-size: 0.7rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.code-tree { list-style: none; overflow-y: auto; padding: 0 6px 10px; }
+.code-tree-item {
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-secondary);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.code-tree-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.code-tree-item.active {
+  background: var(--bg-lift);
+  color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-dim) inset;
+}
+.code-tree-empty { font-size: 0.76rem; color: var(--text-muted); padding: 6px 8px; }
+
+.code-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.code-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.code-filename {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  color: var(--text-primary);
+}
+.code-save-state { font-size: 0.72rem; color: var(--text-muted); flex: 1; }
+.code-toolbar-actions { display: flex; gap: 8px; }
+
+/* The highlight layer sits underneath a transparent textarea; both must use
+   identical metrics or the caret drifts away from the glyphs. */
+.code-editor-wrap { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.code-highlight-layer,
+.code-editor-wrap textarea {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 12px 14px;
+  border: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+}
+.code-highlight-layer {
+  pointer-events: none;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+.code-editor-wrap textarea {
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--accent);
+  resize: none;
+  outline: none;
+}
+.code-editor-wrap textarea::selection { background: var(--accent-dim); }
+
+.code-preview-wrap {
+  height: 42%;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.code-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+}
+#code-preview { flex: 1; border: 0; background: #fff; width: 100%; }
+
+.code-chat {
+  width: 340px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.code-chat-log { flex: 1; overflow-y: auto; padding: 12px; }
+.code-msg { margin-bottom: 12px; }
+.code-msg-body {
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.code-msg-user .code-msg-body {
+  background: var(--user-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 11px;
+  white-space: pre-wrap;
+}
+.code-msg-body pre { max-width: 100%; overflow-x: auto; }
+.code-apply-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 -6px;
+}
+.code-apply-path {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.74rem;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.code-chat-context {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  padding: 0 12px 6px;
+}
+.code-chat-composer {
+  border-top: 1px solid var(--border);
+  padding: 10px 12px;
+  padding-bottom: calc(10px + var(--safe-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.code-chat-composer textarea {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 9px 11px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.84rem;
+  resize: vertical;
+  box-shadow: var(--shadow-sunken);
+}
+
+/* On a phone the three columns can't coexist, so the tree becomes a strip and
+   the chat drops below the editor. */
+@media (max-width: 900px) {
+  .code-body { flex-direction: column; }
+  .code-sidebar {
+    width: 100%;
+    max-height: 132px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .code-chat {
+    width: 100%;
+    max-height: 46%;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+  .code-main { min-height: 220px; }
+}
+
+/* ============================================================
+   iOS / home-screen app
+   Everything here is about the PWA case specifically: standalone
+   mode reports real notch and home-indicator insets that Safari's
+   tab UI does not, the keyboard resizes the visual viewport
+   without resizing the layout viewport, and Safari zooms the page
+   whenever a focused input is under 16px.
+   ============================================================ */
+
+/* Scholar Code is position:fixed, so it sits outside #app and inherits none
+   of the shell's safe-area padding or --app-height. Both have to be repeated
+   here or the header hides under the Dynamic Island and the chat composer
+   ends up behind the keyboard. */
+.code-view {
+  bottom: auto;
+  height: 100dvh;
+  height: var(--app-height, 100dvh);
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+  box-sizing: border-box;
+}
+/* The header's own padding-top was being eaten by its fixed height, pushing
+   the title up under the notch; the inset now lives on .code-view instead. */
+.code-header { padding-top: 0; }
+
+@media (pointer: coarse) {
+  /* Safari zooms the whole page when a focused field is under 16px and never
+     zooms back out. Raising these only for touch keeps the desktop density. */
+  input[type="text"],
+  input[type="password"],
+  input[type="search"],
+  textarea,
+  select,
+  /* Repeated at the sidebar's own specificity — .setting-group input[type=…]
+     is two classes deep and would otherwise keep winning at 13px. */
+  .setting-group input[type="text"],
+  .setting-group input[type="password"],
+  .setting-group textarea,
+  .token-wrap input,
+  .project-section textarea,
+  .project-link-row input,
+  .code-chat-composer textarea,
+  .history-search input {
+    font-size: 16px;
+  }
+  /* The editor is monospace and 16px costs real columns, but a page stuck at
+     2x zoom costs more. */
+  .code-editor-wrap,
+  .code-highlight-layer,
+  .code-editor-wrap textarea {
+    font-size: 16px;
+  }
+
+  /* Apple's minimum touch target is 44x44pt. Growing an invisible box around
+     each icon does not get there on a crowded row: neighbouring boxes overlap
+     and steal each other's taps, which is worse than a slightly small target.
+     So the composer icons are given real 44px boxes — with the chat-mode pill
+     folded into the picker below 520px there is room for three icons, the
+     project picker and Send on a 375px screen. The artwork inside is
+     untouched; only the box around it grows. */
+  .attach-icon,
+  .folder-assign-icon,
+  .agent-toggle {
+    width: 44px;
+    height: 44px;
+  }
+  .composer-send-group .send-button,
+  .composer-send-group .stop-button,
+  .composer-status-group .model-picker-btn {
+    min-height: 44px;
+  }
+
+  /* .btn-sm is the app's small pill — Run, Delete, Reconnect, Add files, the
+     code chat's Send. At 31px tall none of them met the touch minimum. */
+  .btn-sm { min-height: 44px; }
+
+  /* Header icons are 34px with a small gap, so invisible 44px boxes on
+     neighbours overlapped and each one lost a few pixels to the next. Real
+     44px boxes instead — they still fit inside the 54px header, and the icon
+     artwork inside is unchanged. */
+  header .icon-btn,
+  .code-header .icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+  header .icon-btn::after,
+  .code-header .icon-btn::after { content: none; }
+
+  /* Everywhere else an icon button stands alone, so growing the hit area
+     past the artwork is safe and keeps the surrounding layout untouched. */
+  .icon-btn,
+  .token-reveal { position: relative; }
+  .icon-btn::after,
+  .token-reveal::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+  /* Exceptions: rows of small buttons packed side by side. A 44px box on each
+     would overlap its neighbours, so these get real padding instead. */
+  .msg-action-btn::after,
+  .project-doc-remove::after,
+  .project-settings::after,
+  .history-item .icon-btn::after { content: none; }
+  .msg-action-btn { padding-top: 8px; padding-bottom: 8px; }
+}
+
+/* Below this width the composer cannot hold six controls and still show a
+   readable project name, so the chat-mode pill folds into the project picker
+   (see renderProjectPicker) rather than squeezing everything. */
+@media (max-width: 520px) {
+  .chat-mode-wrap { display: none !important; }
+  .composer-controls { gap: 3px; }
+  /* The status dot says nothing the picker beside it doesn't — that reads
+     "Offline" whenever the dot would be red — so its width goes to the
+     project name, which is what actually gets truncated here. */
+  .composer-status-group > #status-indicator { display: none; }
+  /* Send is the anchor of the row; keep its label but let it tighten. */
+  .composer-send-group .send-button,
+  .composer-send-group .stop-button { padding-left: 14px; padding-right: 14px; }
+}
+
+/* The mode selector as it appears inside the project picker on phones. */
+.picker-mode-row {
+  display: flex;
+  gap: 6px;
+  padding: 4px 4px 10px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.picker-mode-row .picker-mode-btn {
+  flex: 1;
+  padding: 8px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.picker-mode-row .picker-mode-btn.selected {
+  background: linear-gradient(to bottom, var(--accent-hover), var(--accent) 60%, #1fb8c9);
+  color: #04262b;
+  border-color: #1a9aa8;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.picker-mode-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 0 4px 6px;
+}
+
+/* The tab bar only exists in the phone layout. */
+.code-tabs { display: none; }
+
+/* Scholar Code on a phone. Stacking the three panels gave each about 200px on
+   a 667px screen — too short to edit in, and the file strip clipped mid-row,
+   which reads as broken rather than scrollable. One pane at a time, full
+   height, switched by tabs. */
+@media (max-width: 900px) {
+  .code-tabs {
+    display: flex;
+    gap: 3px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary);
+    flex-shrink: 0;
+  }
+  .code-tab {
+    flex: 1;
+    min-height: 40px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg-input);
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: var(--shadow-sunken);
+  }
+  .code-tab.active {
+    background: linear-gradient(to bottom, var(--accent-hover), var(--accent) 60%, #1fb8c9);
+    color: #04262b;
+    border-color: #1a9aa8;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+    box-shadow: 0 0 8px var(--accent-glow), 0 1px 1px rgba(255, 255, 255, 0.35) inset;
+  }
+
+  .code-body { flex-direction: column; }
+  .code-sidebar,
+  .code-main,
+  .code-chat {
+    width: 100%;
+    max-height: none;
+    border: 0;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  /* Only the selected pane is in the layout at all — hidden panes must not
+     reserve height, or the visible one is short again. */
+  .code-view[data-pane="files"]  .code-main,
+  .code-view[data-pane="files"]  .code-chat,
+  .code-view[data-pane="editor"] .code-sidebar,
+  .code-view[data-pane="editor"] .code-chat,
+  .code-view[data-pane="chat"]   .code-sidebar,
+  .code-view[data-pane="chat"]   .code-main { display: none; }
+
+  .code-tree { padding: 8px; }
+  .code-tree-item { min-height: 44px; display: flex; align-items: center; font-size: 0.9rem; }
+  .code-preview-wrap { height: 50%; }
+  .code-header-actions .btn-sm { padding: 8px 12px; }
 }
