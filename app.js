@@ -18,6 +18,9 @@ const CHANGELOG = [
     'Scholar Code — a separate coding view with a file tree, an editor, a sandboxed live preview, and a chat that writes straight into your files. Files can be pushed into a project so later chats can read them',
     'The composer row really does stay on one line now, at every width from 320px up. v0.8.7 claimed this but the row was a three-column grid holding four items, so Send had been wrapping onto its own line the whole time',
     'A bare Tailscale IP now connects over http instead of https. Nothing issues certificates for an IP, so the old behaviour failed with a TLS error that read like the server being down; a .ts.net name still gets https',
+    'iPhone pass: the composer no longer overlaps itself — the project picker was overflowing its container, dropping the status dot on top of the agent button and running the project name under Send. Every button now meets the 44pt touch minimum, and no field is under 16px, which is what made iOS zoom the page in on a tap and never zoom back out',
+    'Scholar Code on a phone is now tabbed — Files, Editor, Chat — instead of three stacked panels each getting a fifth of the screen. The editor gets about 75% of the height, and tapping a file takes you straight to it',
+    'Fixed Scholar Code sitting under the Dynamic Island and behind the keyboard when installed to the home screen: it is position:fixed, so it inherited none of the app shell\'s safe-area insets or viewport height',
   ] },
   { version: 'v0.8.7', date: '2026-08-31T02:30:00Z', notes: [
     'Controls below the input field now stay on a single row at all viewport widths — status dot, model picker, Send/Stop, attach, and folder buttons no longer wrap',
@@ -1462,6 +1465,34 @@ function closeProjectPicker() {
 
 function renderProjectPicker() {
   projectPickerList.innerHTML = '';
+
+  // Below 520px the composer has no room for the chat-mode pill, so the mode
+  // lives here instead. Rendered only when the pill is actually hidden, so
+  // wider screens don't get the same control twice.
+  if (window.matchMedia('(max-width: 520px)').matches) {
+    const label = document.createElement('div');
+    label.className = 'picker-mode-label';
+    label.textContent = 'Answer mode';
+    projectPickerList.appendChild(label);
+
+    const row = document.createElement('div');
+    row.className = 'picker-mode-row';
+    CHAT_MODES.forEach(mode => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'picker-mode-btn' + (mode.id === state.chatMode ? ' selected' : '');
+      btn.textContent = mode.label;
+      btn.title = mode.hint;
+      btn.addEventListener('click', () => {
+        state.chatMode = mode.id;
+        saveSettings();
+        syncAgentToggle();
+        renderProjectPicker();
+      });
+      row.appendChild(btn);
+    });
+    projectPickerList.appendChild(row);
+  }
 
   Projects.list.forEach(project => {
     const row = document.createElement('button');

@@ -111,6 +111,19 @@ Ask for a change and the reply's code blocks get an **Apply to file** / **Create
 
 ---
 
+## On iPhone
+
+Open Scholar in Safari, then **Share → Add to Home Screen**. It launches without browser chrome and behaves like an app.
+
+The layout is built for that case specifically: safe-area insets keep content clear of the Dynamic Island and the home indicator, the view resizes with the keyboard rather than hiding the composer behind it, every control meets Apple's 44pt touch minimum, and no input is under 16px — below that, iOS zooms the page in on focus and never zooms back out.
+
+Two things adapt on a phone:
+
+- The **answer mode** (Chat / Query / Automatic) moves from the composer into the project picker, since the composer has no room for it alongside the project name.
+- **Scholar Code** becomes tabbed — Files, Editor, Chat — instead of three stacked panels. Tapping a file opens it in the editor.
+
+---
+
 ## LM Studio (fallback)
 
 Switch the backend in **Settings → Backend**. Both backends keep their own address and key, so switching back is one click.

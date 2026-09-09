@@ -54,6 +54,7 @@ const ScholarCode = {
       chatStop: $('#code-chat-stop'),
       chatContext: $('#code-chat-context'),
       status: $('#code-status'),
+      tabs: $('#code-tabs'),
     };
 
     this.load();
@@ -92,6 +93,30 @@ const ScholarCode = {
         }
       });
     }
+
+    if (e.tabs) {
+      e.tabs.addEventListener('click', (ev) => {
+        const btn = ev.target.closest('.code-tab');
+        if (btn) this.setPane(btn.dataset.pane);
+      });
+    }
+    this.setPane('editor');
+  },
+
+  // Which pane the phone layout is showing. Ignored above 900px, where all
+  // three are visible side by side and the tab bar is hidden.
+  setPane(pane) {
+    this.pane = pane;
+    this.el.view.dataset.pane = pane;
+    this.el.tabs?.querySelectorAll('.code-tab').forEach(b =>
+      b.classList.toggle('active', b.dataset.pane === pane));
+    // The highlight layer is painted while hidden on a tab switch, and a
+    // display:none element has no scroll position, so re-sync on the way in.
+    if (pane === 'editor') requestAnimationFrame(() => this.syncScroll());
+  },
+
+  onNarrow() {
+    return window.matchMedia('(max-width: 900px)').matches;
   },
 
   // --- Storage ---
@@ -157,6 +182,7 @@ const ScholarCode = {
     this.persist();
     this.renderTree();
     this.openFile(clean);
+    if (this.onNarrow()) this.setPane('editor');
   },
 
   deleteOpen() {
@@ -249,7 +275,10 @@ const ScholarCode = {
       li.className = 'code-tree-item' + (path === this.openPath ? ' active' : '');
       li.textContent = path;
       li.title = path;
-      li.addEventListener('click', () => this.openFile(path));
+      li.addEventListener('click', () => {
+        this.openFile(path);
+        if (this.onNarrow()) this.setPane('editor');
+      });
       tree.appendChild(li);
     });
   },
@@ -307,6 +336,7 @@ const ScholarCode = {
   },
 
   run() {
+    if (this.onNarrow()) this.setPane('editor');
     const doc = this.buildPreviewDoc();
     this.el.previewWrap.classList.remove('hidden');
     // srcdoc plus a sandbox with scripts but no same-origin: the preview can
@@ -516,6 +546,7 @@ const ScholarCode = {
         this.persist();
         this.renderTree();
         this.openFile(block.path);
+        if (this.onNarrow()) this.setPane('editor');
         apply.textContent = 'Applied ✓';
         apply.disabled = true;
         this.setStatus(`${exists ? 'Updated' : 'Created'} ${block.path}.`, 'ok');

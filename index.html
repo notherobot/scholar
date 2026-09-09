@@ -383,6 +383,15 @@
         </div>
       </header>
 
+      <!-- Phone layout: three stacked panes each get ~200px on a 667px screen,
+           which is not enough to edit in. Below 900px they become tabs and one
+           pane owns the full height instead. -->
+      <div id="code-tabs" class="code-tabs" role="tablist">
+        <button type="button" class="code-tab" data-pane="files" role="tab">Files</button>
+        <button type="button" class="code-tab" data-pane="editor" role="tab">Editor</button>
+        <button type="button" class="code-tab" data-pane="chat" role="tab">Chat</button>
+      </div>
+
       <div class="code-body">
         <aside class="code-sidebar">
           <div class="code-sidebar-head">

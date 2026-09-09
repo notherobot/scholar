@@ -1378,13 +1378,21 @@ pre:has(.preview-btn) .copy-btn { right: 72px; }
 .composer-controls > *:not(.composer-status-group) { flex-shrink: 0; }
 .composer-status-group { flex: 1 1 auto; }
 /* A long project or model name shrinks with an ellipsis rather than growing
-   the row. */
-.composer-status-group .model-picker-btn { min-width: 0; }
+   the row. Every ancestor between the flex line and the text needs min-width:0
+   — without it a flex item refuses to shrink below its content, so the label
+   pushes into Send and gets clipped mid-word instead of ellipsising. */
+/* .model-dropdown sets flex-shrink:0, so without this the picker keeps its
+   full width inside a narrower status group. The group centres its content,
+   so the excess spilled out both sides — the status dot landed on top of the
+   agent toggle and the project name ran under Send. */
+.composer-status-group .model-picker-btn { min-width: 0; flex-shrink: 1; }
 .composer-status-group .model-picker-btn > span:first-child {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.composer-status-group .model-picker-chevron { flex-shrink: 0; }
 
 .composer-status-group {
   display: flex;
@@ -2829,4 +2837,226 @@ body.resizing-panel { cursor: ew-resize; user-select: none; }
     border-top: 1px solid var(--border);
   }
   .code-main { min-height: 220px; }
+}
+
+/* ============================================================
+   iOS / home-screen app
+   Everything here is about the PWA case specifically: standalone
+   mode reports real notch and home-indicator insets that Safari's
+   tab UI does not, the keyboard resizes the visual viewport
+   without resizing the layout viewport, and Safari zooms the page
+   whenever a focused input is under 16px.
+   ============================================================ */
+
+/* Scholar Code is position:fixed, so it sits outside #app and inherits none
+   of the shell's safe-area padding or --app-height. Both have to be repeated
+   here or the header hides under the Dynamic Island and the chat composer
+   ends up behind the keyboard. */
+.code-view {
+  bottom: auto;
+  height: 100dvh;
+  height: var(--app-height, 100dvh);
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+  box-sizing: border-box;
+}
+/* The header's own padding-top was being eaten by its fixed height, pushing
+   the title up under the notch; the inset now lives on .code-view instead. */
+.code-header { padding-top: 0; }
+
+@media (pointer: coarse) {
+  /* Safari zooms the whole page when a focused field is under 16px and never
+     zooms back out. Raising these only for touch keeps the desktop density. */
+  input[type="text"],
+  input[type="password"],
+  input[type="search"],
+  textarea,
+  select,
+  /* Repeated at the sidebar's own specificity — .setting-group input[type=…]
+     is two classes deep and would otherwise keep winning at 13px. */
+  .setting-group input[type="text"],
+  .setting-group input[type="password"],
+  .setting-group textarea,
+  .token-wrap input,
+  .project-section textarea,
+  .project-link-row input,
+  .code-chat-composer textarea,
+  .history-search input {
+    font-size: 16px;
+  }
+  /* The editor is monospace and 16px costs real columns, but a page stuck at
+     2x zoom costs more. */
+  .code-editor-wrap,
+  .code-highlight-layer,
+  .code-editor-wrap textarea {
+    font-size: 16px;
+  }
+
+  /* Apple's minimum touch target is 44x44pt. Growing an invisible box around
+     each icon does not get there on a crowded row: neighbouring boxes overlap
+     and steal each other's taps, which is worse than a slightly small target.
+     So the composer icons are given real 44px boxes — with the chat-mode pill
+     folded into the picker below 520px there is room for three icons, the
+     project picker and Send on a 375px screen. The artwork inside is
+     untouched; only the box around it grows. */
+  .attach-icon,
+  .folder-assign-icon,
+  .agent-toggle {
+    width: 44px;
+    height: 44px;
+  }
+  .composer-send-group .send-button,
+  .composer-send-group .stop-button,
+  .composer-status-group .model-picker-btn {
+    min-height: 44px;
+  }
+
+  /* .btn-sm is the app's small pill — Run, Delete, Reconnect, Add files, the
+     code chat's Send. At 31px tall none of them met the touch minimum. */
+  .btn-sm { min-height: 44px; }
+
+  /* Header icons are 34px with a small gap, so invisible 44px boxes on
+     neighbours overlapped and each one lost a few pixels to the next. Real
+     44px boxes instead — they still fit inside the 54px header, and the icon
+     artwork inside is unchanged. */
+  header .icon-btn,
+  .code-header .icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+  header .icon-btn::after,
+  .code-header .icon-btn::after { content: none; }
+
+  /* Everywhere else an icon button stands alone, so growing the hit area
+     past the artwork is safe and keeps the surrounding layout untouched. */
+  .icon-btn,
+  .token-reveal { position: relative; }
+  .icon-btn::after,
+  .token-reveal::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+  /* Exceptions: rows of small buttons packed side by side. A 44px box on each
+     would overlap its neighbours, so these get real padding instead. */
+  .msg-action-btn::after,
+  .project-doc-remove::after,
+  .project-settings::after,
+  .history-item .icon-btn::after { content: none; }
+  .msg-action-btn { padding-top: 8px; padding-bottom: 8px; }
+}
+
+/* Below this width the composer cannot hold six controls and still show a
+   readable project name, so the chat-mode pill folds into the project picker
+   (see renderProjectPicker) rather than squeezing everything. */
+@media (max-width: 520px) {
+  .chat-mode-wrap { display: none !important; }
+  .composer-controls { gap: 3px; }
+  /* The status dot says nothing the picker beside it doesn't — that reads
+     "Offline" whenever the dot would be red — so its width goes to the
+     project name, which is what actually gets truncated here. */
+  .composer-status-group > #status-indicator { display: none; }
+  /* Send is the anchor of the row; keep its label but let it tighten. */
+  .composer-send-group .send-button,
+  .composer-send-group .stop-button { padding-left: 14px; padding-right: 14px; }
+}
+
+/* The mode selector as it appears inside the project picker on phones. */
+.picker-mode-row {
+  display: flex;
+  gap: 6px;
+  padding: 4px 4px 10px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.picker-mode-row .picker-mode-btn {
+  flex: 1;
+  padding: 8px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.picker-mode-row .picker-mode-btn.selected {
+  background: linear-gradient(to bottom, var(--accent-hover), var(--accent) 60%, #1fb8c9);
+  color: #04262b;
+  border-color: #1a9aa8;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.picker-mode-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 0 4px 6px;
+}
+
+/* The tab bar only exists in the phone layout. */
+.code-tabs { display: none; }
+
+/* Scholar Code on a phone. Stacking the three panels gave each about 200px on
+   a 667px screen — too short to edit in, and the file strip clipped mid-row,
+   which reads as broken rather than scrollable. One pane at a time, full
+   height, switched by tabs. */
+@media (max-width: 900px) {
+  .code-tabs {
+    display: flex;
+    gap: 3px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary);
+    flex-shrink: 0;
+  }
+  .code-tab {
+    flex: 1;
+    min-height: 40px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg-input);
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: var(--shadow-sunken);
+  }
+  .code-tab.active {
+    background: linear-gradient(to bottom, var(--accent-hover), var(--accent) 60%, #1fb8c9);
+    color: #04262b;
+    border-color: #1a9aa8;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+    box-shadow: 0 0 8px var(--accent-glow), 0 1px 1px rgba(255, 255, 255, 0.35) inset;
+  }
+
+  .code-body { flex-direction: column; }
+  .code-sidebar,
+  .code-main,
+  .code-chat {
+    width: 100%;
+    max-height: none;
+    border: 0;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  /* Only the selected pane is in the layout at all — hidden panes must not
+     reserve height, or the visible one is short again. */
+  .code-view[data-pane="files"]  .code-main,
+  .code-view[data-pane="files"]  .code-chat,
+  .code-view[data-pane="editor"] .code-sidebar,
+  .code-view[data-pane="editor"] .code-chat,
+  .code-view[data-pane="chat"]   .code-sidebar,
+  .code-view[data-pane="chat"]   .code-main { display: none; }
+
+  .code-tree { padding: 8px; }
+  .code-tree-item { min-height: 44px; display: flex; align-items: center; font-size: 0.9rem; }
+  .code-preview-wrap { height: 50%; }
+  .code-header-actions .btn-sm { padding: 8px 12px; }
 }
