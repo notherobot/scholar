@@ -52,10 +52,13 @@ Both are saved in your browser and reconnect automatically next time.
 
 GitHub Pages serves Scholar over https, and **a browser will not let an https page call a plain http address.** So from the hosted URL you need an https address for AnythingLLM:
 
-```
-tailscale cert my-pc.tailnet.ts.net
-tailscale serve --bg --https 443 http://127.0.0.1:3001
-```
+1. One-time: in the [Tailscale admin console](https://login.tailscale.com/admin/dns) → DNS, turn on **HTTPS Certificates**.
+2. On the PC running AnythingLLM:
+   ```
+   sudo tailscale serve --bg --https=443 localhost:3001
+   ```
+   (`sudo` depends on how Tailscale is installed; not needed on macOS/Windows.) This proxies your `.ts.net` name on standard https (443) to AnythingLLM's plain-http port 3001 — Tailscale provisions the certificate itself, no separate `tailscale cert` step needed.
+3. Check it took: `tailscale serve status`. Remove it later with `tailscale serve reset`.
 
 Then enter `my-pc.tailnet.ts.net` (no port) in Scholar.
 
