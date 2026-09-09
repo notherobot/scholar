@@ -260,6 +260,8 @@ const useAllmLocal   = $('#use-allm-localhost');
 const sidebarAllmUrl = $('#sidebar-allm-url');
 const sidebarAllmKey = $('#sidebar-allm-key');
 const sidebarAllmReconnect = $('#sidebar-allm-reconnect');
+const sidebarAllmStatusDot  = $('#sidebar-allm-status-dot');
+const sidebarAllmStatusText = $('#sidebar-allm-status-text');
 
 const modelPickerWrap  = $('.model-picker-wrap');
 const projectPickerBtn = $('#project-picker-btn');
@@ -292,6 +294,8 @@ const sidebarOverlay = $('#sidebar-overlay');
 const sidebarClose   = $('#sidebar-close');
 const sidebarUrl     = $('#sidebar-url');
 const sidebarReconn  = $('#sidebar-reconnect');
+const sidebarLmsStatusDot   = $('#sidebar-lms-status-dot');
+const sidebarLmsStatusText  = $('#sidebar-lms-status-text');
 const apiTokenInput  = $('#api-token');
 const disconnectBtn  = $('#disconnect-btn');
 const systemPrompt   = $('#system-prompt');
@@ -526,12 +530,14 @@ function syncBackendUI() {
 
 async function connect() {
   setStatus('connecting');
+  setBackendStatus(isAnythingLLM() ? 'allm' : 'lms', 'connecting', 'Checking…');
 
   if (isAnythingLLM()) {
     const probe = await AnythingLLM.probe({ url: state.conn.allmUrl, key: state.conn.allmKey });
     if (!probe.ok) {
       state.connected = false;
       setStatus('disconnected');
+      setBackendStatus('allm', 'error', probe.error);
       Projects.lastError = probe.error;
       Projects.renderList();
       // Retry silently — a laptop that woke up or a Tailscale link that came
@@ -541,6 +547,7 @@ async function connect() {
     }
     state.connected = true;
     setStatus('connected');
+    setBackendStatus('allm', 'connected', 'Connected');
     await Projects.refresh();
     await ensureActiveProject();
     syncProjectPicker();
@@ -571,9 +578,15 @@ async function connect() {
     syncModelPickerLabel();
 
     setStatus('connected');
+    setBackendStatus('lms', 'connected', 'Connected');
     updateSendBtn();
   } catch (err) {
     setStatus('disconnected');
+    // Same two failure shapes tryConnect() distinguishes on the setup screen —
+    // "reached but rejected" needs a different fix than "never reached".
+    setBackendStatus('lms', 'error', /HTTP (401|403)/.test(err.message)
+      ? 'Server rejected the token.'
+      : 'Not reachable — check the address and that the server is running.');
     state.connected = false;
     state.availableModels = [];
     modelSelect.innerHTML = '<option value="">Offline</option>';
@@ -669,6 +682,23 @@ function setStatus(s) {
   statusDot.className = 'status ' + s;
 }
 
+// Per-backend connection confirmation shown in Settings — deliberately
+// separate from setStatus() above, which is the composer's dot and only ever
+// reflects whichever backend is currently active. These track AnythingLLM and
+// LM Studio independently, so their last-known state stays visible in
+// Settings no matter which one you're actively chatting on, and edits made
+// while disconnected don't masquerade as a live connection.
+//   status: 'unknown' (never probed this session) | 'connecting' | 'connected' | 'error'
+function setBackendStatus(which, status, text) {
+  const dot  = which === 'allm' ? sidebarAllmStatusDot  : sidebarLmsStatusDot;
+  const label = which === 'allm' ? sidebarAllmStatusText : sidebarLmsStatusText;
+  if (!dot || !label) return;
+  // 'error' reuses the same red dot as the composer's 'disconnected' — there is
+  // no separate CSS state for it, and visually they mean the same thing.
+  dot.className = 'status ' + (status === 'error' ? 'disconnected' : status);
+  label.textContent = text;
+}
+
 // === Views ===
 function showChat() {
   setup.classList.add('hidden');
@@ -691,6 +721,9 @@ function showSetup() {
   // still good, and re-entering them to switch back would be busywork.
   if (isAnythingLLM()) state.conn.allmUrl = '';
   else state.conn.lmsUrl = '';
+  // The address just got cleared, so "error" (tried and failed) would be the
+  // wrong read here — this backend simply isn't configured any more.
+  setBackendStatus(isAnythingLLM() ? 'allm' : 'lms', 'unknown', 'Not checked yet');
   state.activeProjectSlug = null;
   Projects.list = [];
   Projects.renderList();
@@ -3567,7 +3600,9 @@ function setupListeners() {
     saveConnection();
     syncConnectionInputs();
     connect();
-    closeSidebar();
+    // Settings stays open (was: closeSidebar() right here) — closing
+    // immediately hid the status dot before the probe it's meant to report on
+    // had even resolved. The user closes it once they've seen the result.
   });
 
   if (sidebarAllmReconnect) {
@@ -3581,7 +3616,8 @@ function setupListeners() {
       saveConnection();
       syncConnectionInputs();
       connect();
-      closeSidebar();
+      // See the comment in the LM Studio reconnect handler above — same
+      // reasoning applies here.
     });
   }
 

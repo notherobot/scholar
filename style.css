@@ -451,6 +451,24 @@ header::before {
 .status.connected { background: var(--success); box-shadow: inset -1px -1px 2px rgba(0, 0, 0, 0.5), inset 1px 1px 1px rgba(255, 255, 255, 0.7), 0 0 6px var(--success); }
 .status.disconnected { background: var(--danger); }
 .status.connecting { background: var(--warning); animation: pulse 1s infinite; }
+/* A neutral fourth state for the Settings dots: this backend hasn't been
+   probed this session, which is different from "we tried and it failed". */
+.status.unknown { background: var(--text-muted); box-shadow: none; }
+
+/* Per-backend connection confirmation in Settings — separate from the
+   composer's status dot, which only ever reflects whichever backend is
+   currently active. These two show each backend's own last-known state, so
+   switching backends or editing a saved-but-untested address is legible
+   without leaving Settings. */
+.conn-status-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 0 8px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+.conn-status-row .status { margin: 0; }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }

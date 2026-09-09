@@ -94,6 +94,10 @@
             <input type="password" id="sidebar-allm-key" placeholder="Paste API key" spellcheck="false" autocomplete="off">
             <button type="button" class="token-reveal" data-token-for="sidebar-allm-key" aria-label="Show key">Show</button>
           </div>
+          <div class="conn-status-row">
+            <span id="sidebar-allm-status-dot" class="status unknown"></span>
+            <span id="sidebar-allm-status-text">Not checked yet</span>
+          </div>
           <button id="sidebar-allm-reconnect" class="btn-sm">Connect to AnythingLLM</button>
           <p class="setting-hint">Key from <strong>Settings → Tools → Developer API</strong> in AnythingLLM. Default port <code>3001</code>.</p>
         </div>
@@ -105,6 +109,10 @@
           <div class="token-wrap">
             <input type="password" id="api-token" placeholder="Paste token" spellcheck="false" autocomplete="off">
             <button type="button" class="token-reveal" data-token-for="api-token" aria-label="Show token">Show</button>
+          </div>
+          <div class="conn-status-row">
+            <span id="sidebar-lms-status-dot" class="status unknown"></span>
+            <span id="sidebar-lms-status-text">Not checked yet</span>
           </div>
           <button id="sidebar-reconnect" class="btn-sm">Connect to LM Studio</button>
           <p class="setting-hint">In LM Studio: <strong>Developer → Server Settings</strong> → turn on <em>Require Authentication</em>, then <em>Manage Tokens</em>. Default port <code>1234</code>.</p>
