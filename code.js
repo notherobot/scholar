@@ -3,16 +3,14 @@
 // live preview, and a chat that writes straight into the files.
 //
 // What it deliberately is not: Scholar is a static page in a browser tab, so
-// it cannot run a shell, install packages, or touch the disk on your PC. There
-// is no sandbox on the other end to run them in — AnythingLLM's own filesystem
-// skill is gated to its Docker runtime and its `cli` plugin is development
-// only. So the files here live in this browser, previews run in a sandboxed
-// iframe, and "running code" means HTML/CSS/JS in that iframe. Everything
-// else — writing, refactoring, explaining, reviewing — goes through the model
-// with the real file contents in the prompt.
+// it cannot run a shell, install packages, or touch the disk on your PC. The
+// files here live in this browser, previews run in a sandboxed iframe, and
+// "running code" means HTML/CSS/JS in that iframe. Everything else — writing,
+// refactoring, explaining, reviewing — goes through the model with the real
+// file contents in the prompt.
 //
-// The one bridge to the rest of Scholar: files can be pushed into a project,
-// where they become documents that every chat in that project can retrieve.
+// An MCP server that reaches the filesystem would change that, and LM Studio
+// can host one; wiring it up here is a separate job from this editor.
 
 const ScholarCode = {
   FILES_KEY: 'scholar-code-files',
@@ -37,7 +35,6 @@ const ScholarCode = {
       closeBtn: $('#code-close'),
       tree: $('#code-tree'),
       newFileBtn: $('#code-new-file'),
-      pushBtn: $('#code-push-project'),
       editorWrap: $('#code-editor-wrap'),
       editor: $('#code-editor'),
       highlight: $('#code-highlight'),
@@ -65,7 +62,6 @@ const ScholarCode = {
     if (e.deleteBtn) e.deleteBtn.addEventListener('click', () => this.deleteOpen());
     if (e.runBtn) e.runBtn.addEventListener('click', () => this.run());
     if (e.previewClose) e.previewClose.addEventListener('click', () => this.closePreview());
-    if (e.pushBtn) e.pushBtn.addEventListener('click', () => this.pushToProject());
     if (e.chatSend) e.chatSend.addEventListener('click', () => this.send());
     if (e.chatStop) e.chatStop.addEventListener('click', () => this.stop());
 
@@ -140,7 +136,7 @@ const ScholarCode = {
     } catch (err) {
       // Quota is the only realistic failure, and silently losing an edit
       // would be far worse than saying so.
-      this.setStatus('Could not save — this browser\'s storage is full. Push files to a project or delete some.', 'error');
+      this.setStatus('Could not save — this browser\'s storage is full. Delete some files to make room.', 'error');
       return false;
     }
   },
@@ -340,47 +336,13 @@ const ScholarCode = {
     const doc = this.buildPreviewDoc();
     this.el.previewWrap.classList.remove('hidden');
     // srcdoc plus a sandbox with scripts but no same-origin: the preview can
-    // run, but it cannot reach this page's storage or its AnythingLLM key.
+    // run, but it cannot reach this page's storage or its API token.
     this.el.preview.srcdoc = doc;
   },
 
   closePreview() {
     this.el.previewWrap.classList.add('hidden');
     this.el.preview.srcdoc = '';
-  },
-
-  // --- Project knowledge ---
-
-  // Uploads the current files into the active project as documents, so later
-  // chats — in the main chat view too — can retrieve them.
-  async pushToProject() {
-    if (!isAnythingLLM()) {
-      alert('Pushing files into a project needs AnythingLLM. Switch the backend in Settings.');
-      return;
-    }
-    const slug = state.activeProjectSlug;
-    if (!slug) { alert('Pick a project first.'); return; }
-    const paths = Object.keys(this.files);
-    if (!paths.length) return;
-    const project = Projects.byslug(slug);
-    if (!confirm(`Add ${paths.length} file${paths.length === 1 ? '' : 's'} to "${project?.name || slug}" as project knowledge?`)) return;
-
-    for (const path of paths) {
-      try {
-        this.setStatus(`Adding ${path}…`);
-        await AnythingLLM.uploadRawText({
-          url: state.conn.allmUrl, key: state.conn.allmKey,
-          text: `File: ${path}\n\n${this.files[path]}`,
-          title: path,
-          slug,
-        });
-      } catch (err) {
-        this.setStatus(`Could not add ${path}: ${err.message}`, 'error');
-        return;
-      }
-    }
-    this.setStatus(`Added ${paths.length} file${paths.length === 1 ? '' : 's'} to ${project?.name || slug}.`, 'ok');
-    if (Projects.openSlug === slug) Projects.refreshDocs();
   },
 
   // --- Chat ---
@@ -411,7 +373,14 @@ const ScholarCode = {
     const open = this.openPath
       ? `\n\nOpen file — ${this.openPath}:\n\`\`\`\n${this.files[this.openPath]}\n\`\`\``
       : '';
-    return `Files in this project:\n${listing}${open}\n\n---\n\n${question}`;
+    // /api/v1/chat takes a single message, so earlier turns are replayed here
+    // rather than threaded — see the comment in send().
+    const history = this.messages.length
+      ? this.messages
+          .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+          .join('\n\n') + '\n\n---\n\n'
+      : '';
+    return `Files in this project:\n${listing}${open}\n\n---\n\n${history}${question}`;
   },
 
   async send() {
@@ -441,43 +410,28 @@ const ScholarCode = {
     };
 
     try {
-      if (isAnythingLLM()) {
-        const slug = state.activeProjectSlug;
-        if (!slug) throw new Error('Pick a project first — AnythingLLM chats through a workspace.');
-        // The code chat runs on its own thread so it never mixes into the
-        // conversation open in the main chat view.
-        if (!this.threadSlug) {
-          const thread = await AnythingLLM.createThread({
-            url: state.conn.allmUrl, key: state.conn.allmKey, slug, name: 'Scholar Code',
-          }).catch(() => null);
-          this.threadSlug = thread?.slug || null;
-        }
-        await AnythingLLM.stream({
-          url: state.conn.allmUrl, key: state.conn.allmKey, slug,
-          threadSlug: this.threadSlug,
-          message: `${this.systemPrompt()}\n\n${this.buildPrompt(question)}`,
-          mode: 'chat',
-          signal: this.abortController.signal,
-          onDelta: push,
-          onReasoning: () => {},
-        });
-      } else {
-        await LMStudio.stream({
-          url: state.conn.lmsUrl, key: state.conn.lmsToken,
-          model: activeModelId(),
-          messages: [
-            { role: 'system', content: this.systemPrompt() },
-            ...this.messages,
-            { role: 'user', content: this.buildPrompt(question) },
-          ],
-          temperature: 0.2,
-          maxTokens: parseInt(tokensSlider.value),
-          useStream: true,
-          signal: this.abortController.signal,
-          onDelta: push,
-          onReasoning: () => {},
-        });
-      }
+      // The code chat runs on its own response thread, so it never mixes into
+      // whatever conversation is open in the main chat view. The prior turns
+      // are replayed in the prompt rather than threaded, because the file
+      // contents change between turns and a stale server-side copy of them is
+      // worse than useless.
+      await LMStudio.chat({
+        url: state.conn.lmsUrl,
+        key: state.conn.lmsToken,
+        model: activeModelId(),
+        input: this.buildPrompt(question),
+        systemPrompt: this.systemPrompt(),
+        // MCP tools stay available here too — looking something up mid-edit is
+        // exactly when they earn their keep.
+        integrations: parseIntegrations(state.mcpServers),
+        stream: true,
+        signal: this.abortController.signal,
+        onDelta: push,
+        onReasoning: () => {},
+        onToolStart: ({ tool }) => this.setStatus(`Calling ${tool}…`),
+        onToolDone: ({ tool }) => this.setStatus(`${tool} returned.`),
+        onToolFail: ({ tool, reason }) => this.setStatus(`${tool} failed: ${reason}`, 'error'),
+      });
 
       if (!answer) { body.innerHTML = '<em>(empty response)</em>'; }
       else {
