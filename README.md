@@ -1,6 +1,6 @@
 # Scholar
 
-A personal chat interface that connects to **AnythingLLM** running on your PC over Tailscale — with projects, document knowledge, web-browsing agents, and a coding view. **LM Studio** is kept as a plain fallback.
+A personal chat interface that connects to **LM Studio** running on your PC over Tailscale — with MCP tools, so the model can search the web when it needs to.
 
 **Live URL:** https://notherobot.github.io/scholar/
 
@@ -11,9 +11,8 @@ A personal chat interface that connects to **AnythingLLM** running on your PC ov
 ```
 Your browser (phone, tablet, laptop — anywhere)
     → loads the page from GitHub Pages
-    → talks to your PC over Tailscale
-    → AnythingLLM answers, using your workspace's documents
-       (and, in agent mode, the web)
+    → talks to LM Studio on your PC over Tailscale
+    → LM Studio answers, calling MCP tools when it decides to
 ```
 
 Tailscale gives your PC a stable private address that works from any of your devices. No port forwarding, no tunnels to start.
@@ -31,31 +30,36 @@ Scholar is a static page. There is no Scholar server, no database, and no analyt
 
 Sign in with the same account on all devices.
 
-### 2. Turn on AnythingLLM's Developer API
+### 2. Start LM Studio's server
 
-1. Open AnythingLLM on your PC (default port **3001**).
-2. **Settings → Tools → Developer API → Generate New API Key**.
-3. Copy the key.
+1. Load a model.
+2. **Developer** tab → **Start Server** (port `1234`).
+3. In **Server Settings**, turn on:
+   - **Enable CORS**
+   - **Serve on Local Network**
+   - **Require Authentication** — then **Manage Tokens** → create a token
+   - **Allow calling servers from mcp.json** (needed for MCP)
 
 ### 3. Connect
 
-1. Open Scholar.
-2. Leave the backend on **AnythingLLM**.
-3. Enter your address and paste the key:
-   - `my-pc.tailnet.ts.net:3001` — a MagicDNS name, connected over **https**
-   - `100.x.x.x:3001` — a raw Tailscale IP, connected over **http**
-4. Tap **Connect**.
+Open Scholar, enter your address and paste the token:
+
+- `my-pc.tailnet.ts.net` — a MagicDNS name, connected over **https**
+- `100.x.x.x:1234` — a raw Tailscale IP, connected over **http**
 
 Both are saved in your browser and reconnect automatically next time.
 
 ### Serving over https
 
-GitHub Pages serves Scholar over https, and **a browser will not let an https page call a plain http address.** So from the hosted URL you need an https address for AnythingLLM:
+GitHub Pages serves Scholar over https, and **a browser will not let an https page call a plain http address.** So from the hosted URL you need an https address for LM Studio:
 
-```
-tailscale cert my-pc.tailnet.ts.net
-tailscale serve --bg --https 443 http://127.0.0.1:3001
-```
+1. One-time: in the [Tailscale admin console](https://login.tailscale.com/admin/dns) → DNS, turn on **HTTPS Certificates**.
+2. On the PC running LM Studio:
+   ```
+   sudo tailscale serve --bg --https=443 localhost:1234
+   ```
+   (`sudo` depends on how Tailscale is installed; not needed on macOS/Windows.) Tailscale provisions the certificate itself — there's no separate `tailscale cert` step.
+3. Check it took: `tailscale serve status`. Remove it later with `tailscale serve reset`.
 
 Then enter `my-pc.tailnet.ts.net` (no port) in Scholar.
 
@@ -63,41 +67,34 @@ If you'd rather use a raw `100.x.x.x` address, run Scholar itself over http inst
 
 ---
 
-## Projects
+## MCP tools
 
-A Scholar **project** is an AnythingLLM **workspace**, one to one:
+Scholar chats through LM Studio's native `POST /api/v1/chat` endpoint rather than the OpenAI-compatible one, because **only the native endpoint accepts `integrations`** — the field that attaches MCP servers to a request. The OpenAI-shaped endpoint cannot run tools at all.
 
-| Scholar | AnythingLLM |
+**Name your servers** in Settings → **MCP servers**, comma-separated:
+
+| Where it comes from | What to type |
 | --- | --- |
-| Project | Workspace |
-| Custom instructions | Workspace system prompt |
-| Project knowledge | Documents embedded in the workspace |
-| A chat in a project | A thread in that workspace |
+| A server in LM Studio's `mcp.json` | `mcp/<label>` — the label you gave it there |
+| A plugin from the LM Studio Hub | `<owner>/<name>` |
 
-Create one from the **Projects** section of the Chats panel. Open its gear icon to:
+They have to be typed because LM Studio exposes no endpoint that lists them. Settings tells you plainly whether any are attached, since "MCP is working" and "no servers named, so the model has no tools" otherwise look identical.
 
-- **Add documents** — drag files in, or paste a URL to have AnythingLLM fetch and embed the page. Every chat in the project can then cite them, with no re-uploading.
-- **Set custom instructions** — the project's standing system prompt.
+There is **no on/off toggle**. The servers are attached to every message and the model calls them when it decides to — which is what a system prompt telling it to look things up is for. That prompt belongs in LM Studio's model preset, not here.
 
-Clicking a project starts a new chat inside it. Answers list the documents they drew on; hover a source to see the matching snippet.
+When a tool runs, it appears above the reply with its name, the server it came from, its arguments, and its result — or its failure. A tool called three times with identical arguments is flagged as a loop rather than printing the same line repeatedly.
 
-Chats live as real AnythingLLM threads, so they appear in AnythingLLM's own UI too, and their history and retrieval sit next to the documents rather than only in this browser.
+**MCP needs the API token.** LM Studio gates `mcp.json` servers behind **Require Authentication**, because those servers can reach your filesystem. Without a token you get `403 Permission denied to use plugin`; Scholar names that specific fix rather than blaming the address.
+
+**MCP over the API needs LM Studio 0.4.0 or newer.** On an older build the endpoint 404s, and Scholar says so.
 
 ---
 
-## Agents and web browsing
+## What's not here
 
-Toggle the **globe** next to Send. Scholar then sends the message as `@agent …`, which starts AnythingLLM's agent — it can search the web, read pages, and use whatever other skills you have enabled before answering. Its steps stream live above the reply.
+**No system prompt, temperature, or max tokens.** These live in the model's preset in LM Studio, which is where they actually take effect. Having a second, quieter copy in Scholar just gave them somewhere to disagree.
 
-For web search to work you must configure a search provider in AnythingLLM: **Settings → Agent Skills → Web Search** (SearXNG, Serper, Brave, Google CSE, …). Without one, the agent still runs but has nothing to search with.
-
-The **chat mode** pill picks how a project answers:
-
-- **Chat** — normal conversation; documents used when relevant.
-- **Query** — answer only from the project's documents, or refuse.
-- **Automatic** — let the model call tools itself, if its provider supports native tool calling.
-
-> Earlier versions of Scholar drove AnythingLLM through its OpenAI-compatible shim (`/api/v1/openai/chat/completions`), where `@agent` is silently ignored and no agent ever runs. Scholar now uses the native `/api/v1/workspace/{slug}/thread/{thread}/stream-chat` endpoint, where agent invocation is a real branch.
+**No projects, workspaces, or document upload.** Scholar briefly ran on AnythingLLM to get those; it now talks only to LM Studio. That history is on the `backup/v0.9.0-anythingllm` branch if it's ever wanted back.
 
 ---
 
@@ -105,9 +102,35 @@ The **chat mode** pill picks how a project answers:
 
 A separate coding view (the `< >` button in the header): file tree, editor with syntax highlighting, sandboxed live preview, and a chat that writes into your files.
 
-Ask for a change and the reply's code blocks get an **Apply to file** / **Create file** button. **Run** previews the open file — an HTML file has its sibling `.css` and `.js` inlined first, so a multi-file page previews properly; anything else runs as a script with its console mirrored into the frame. **Push to project** uploads the files into the active project as documents, so ordinary chats can read them too.
+Ask for a change and the reply's code blocks get an **Apply to file** / **Create file** button. **Run** previews the open file — an HTML file has its sibling `.css` and `.js` inlined first, so a multi-file page previews properly; anything else runs as a script with its console mirrored into the frame. MCP tools are available here too.
 
-**What it can't do, and why.** Scholar is a static page in a browser tab. It cannot run a shell, install packages, or read and write files on your PC — there is nothing on the other end to do that. AnythingLLM's own filesystem skill is restricted to its Docker runtime and its CLI plugin is development-only, so neither is a way around it. Files here live in this browser's storage; "running code" means HTML/CSS/JS in a sandboxed iframe. Everything else — writing, refactoring, reviewing, explaining — goes to the model with the real file contents in the prompt.
+**What it can't do, and why.** Scholar is a static page in a browser tab. It cannot run a shell, install packages, or read and write files on your PC. Files here live in this browser's storage; "running code" means HTML/CSS/JS in a sandboxed iframe. Everything else — writing, refactoring, reviewing, explaining — goes to the model with the real file contents in the prompt. An MCP server with filesystem access would change that, and LM Studio can host one.
+
+---
+
+## Conversations
+
+`/api/v1/chat` takes a **single message**, not a transcript — its input objects carry no role. Multi-turn works by threading: every reply returns a `response_id`, and sending it back as `previous_response_id` continues that thread on the server.
+
+Scholar handles the ways that thread breaks:
+
+- An **edit** or a **regenerate** rewrites history the server still holds, so the thread is dropped and the conversation replayed to re-establish it.
+- **LM Studio restarting** drops its stored threads while the id stays in your browser. Nothing distinguishes a dead id from a live one until the request is refused, so the first failure of a threaded turn is retried once as a full replay before it counts as an error. You see a normal answer, not a crash.
+
+---
+
+## Features
+
+- Streaming responses with a stop button, and reasoning rendered inline
+- MCP tool calls shown live: name, server, arguments, result, failures, loop detection
+- Model picker, auto-populated from LM Studio with size/context/quantization info
+- Markdown with code copy buttons and syntax highlighting; HTML preview for code blocks
+- Attachments: images, PDFs (text extracted in-browser), and plain-text/code files
+- Copy, Edit, and Regenerate on messages
+- Saved chat history with search, pinning, rename, folders, and auto-generated titles
+- Scholar Code: file tree, editor, sandboxed preview, model-applied edits
+- Connection status in Settings, separate from the composer's dot
+- PWA — add to home screen on mobile
 
 ---
 
@@ -115,51 +138,20 @@ Ask for a change and the reply's code blocks get an **Apply to file** / **Create
 
 Open Scholar in Safari, then **Share → Add to Home Screen**. It launches without browser chrome and behaves like an app.
 
-The layout is built for that case specifically: safe-area insets keep content clear of the Dynamic Island and the home indicator, the view resizes with the keyboard rather than hiding the composer behind it, every control meets Apple's 44pt touch minimum, and no input is under 16px — below that, iOS zooms the page in on focus and never zooms back out.
+The layout is built for that: safe-area insets keep content clear of the Dynamic Island and home indicator, the view resizes with the keyboard rather than hiding the composer behind it, every control meets Apple's 44pt touch minimum, and no input is under 16px — below that, iOS zooms the page in on focus and never zooms back out.
 
-Two things adapt on a phone:
-
-- The **answer mode** (Chat / Query / Automatic) moves from the composer into the project picker, since the composer has no room for it alongside the project name.
-- **Scholar Code** becomes tabbed — Files, Editor, Chat — instead of three stacked panels. Tapping a file opens it in the editor.
-
----
-
-## LM Studio (fallback)
-
-Switch the backend in **Settings → Backend**. Both backends keep their own address and key, so switching back is one click.
-
-1. LM Studio → **Developer** tab → **Start Server** (port `1234`).
-2. In **Server Settings**: turn on **Enable CORS** and **Serve on Local Network**.
-3. Enter the address in Scholar.
-
-LM Studio has no workspaces, so on this backend there are no projects, no documents, and no agents — you get the model picker, the System Prompt, Temperature, and Max Tokens instead. Those three settings are hidden on AnythingLLM, where the project's own instructions govern.
-
----
-
-## Features
-
-- AnythingLLM backend on its default port 3001, with projects, documents, threads, and agents
-- LM Studio backend as a fallback, with the model picker and sampling controls
-- Streaming responses with a stop button, and reasoning rendered inline
-- Citations on every answer, with snippets on hover
-- Agent step trail streamed live
-- Markdown with code copy buttons and syntax highlighting; HTML preview for code blocks
-- Attachments: images, PDFs (text extracted in-browser), and plain-text/code files
-- Copy, Edit, and Regenerate — an edit or regenerate resets the AnythingLLM thread and replays the surviving turns, so the server's history never drifts from what you see
-- Saved chat history with search, pinning, rename, folders, and auto-generated titles
-- Scholar Code: file tree, editor, sandboxed preview, model-applied edits
-- PWA — add to home screen on mobile
+**Scholar Code** becomes tabbed on a phone — Files, Editor, Chat — instead of three stacked panels. Tapping a file opens it in the editor.
 
 ---
 
 ## Security
 
-- **Tailscale is end-to-end encrypted** — all traffic between your phone and PC uses WireGuard. Nothing passes through a third-party server.
+- **Tailscale is end-to-end encrypted** — traffic between your phone and PC uses WireGuard. Nothing passes through a third-party server.
 - **Private network** — your Tailscale address is only reachable by your own devices.
 - **Static page** — no backend, no database, no analytics.
-- **Local storage only** — your addresses, API key, chats, and code files are stored in your browser and never leave your device.
-- **Your AnythingLLM API key is a full-access credential.** It can read, create, and delete every workspace and document on that instance. Scholar keeps it in this browser's `localStorage`, so treat any device you connect from as trusted, and revoke the key in AnythingLLM if a device is lost.
-- Code previews run in an iframe sandboxed without `allow-same-origin`, so previewed code cannot read Scholar's storage or your key.
+- **Local storage only** — your address, token, chats, and code files stay in your browser.
+- **Your API token unlocks MCP servers**, and those can reach your filesystem. Treat any device you connect from as trusted, and revoke the token in LM Studio if one is lost.
+- Code previews run in an iframe sandboxed without `allow-same-origin`, so previewed code cannot read Scholar's storage or your token.
 
 ---
 

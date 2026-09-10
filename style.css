@@ -451,6 +451,24 @@ header::before {
 .status.connected { background: var(--success); box-shadow: inset -1px -1px 2px rgba(0, 0, 0, 0.5), inset 1px 1px 1px rgba(255, 255, 255, 0.7), 0 0 6px var(--success); }
 .status.disconnected { background: var(--danger); }
 .status.connecting { background: var(--warning); animation: pulse 1s infinite; }
+/* A neutral fourth state for the Settings dots: this backend hasn't been
+   probed this session, which is different from "we tried and it failed". */
+.status.unknown { background: var(--text-muted); box-shadow: none; }
+
+/* Per-backend connection confirmation in Settings — separate from the
+   composer's status dot, which only ever reflects whichever backend is
+   currently active. These two show each backend's own last-known state, so
+   switching backends or editing a saved-but-untested address is legible
+   without leaving Settings. */
+.conn-status-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 0 8px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+.conn-status-row .status { margin: 0; }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
@@ -2290,266 +2308,15 @@ body.resizing-panel { cursor: ew-resize; user-select: none; }
    --accent) so the new surfaces read as the same app.
    ============================================================ */
 
-/* --- Backend switch (setup screen + sidebar) --- */
-.backend-switch {
-  display: flex;
-  gap: 0;
-  margin-bottom: 18px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 3px;
-  background: var(--bg-input);
-  box-shadow: var(--shadow-sunken);
-}
-.backend-choice {
-  flex: 1;
-  padding: 8px 10px;
-  border: none;
-  background: none;
-  color: var(--text-muted);
-  font-family: inherit;
-  font-size: 0.82rem;
-  font-weight: 700;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: color 0.15s, background 0.15s;
-}
-.backend-choice:hover { color: var(--text-secondary); }
-.backend-choice.active {
-  background: linear-gradient(to bottom, var(--accent-hover), var(--accent) 60%, #1fb8c9);
-  color: #04262b;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
-  box-shadow: 0 0 8px var(--accent-glow), 0 1px 1px rgba(255, 255, 255, 0.35) inset;
-}
-
-/* --- Projects section in the Chats panel --- */
-.projects-section {
-  margin: 6px 0 14px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border);
-}
-.projects-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 4px 6px;
-}
-.projects-header h4 {
-  font-size: 0.7rem;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  font-weight: 700;
-}
-.projects-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
-.projects-empty {
-  font-size: 0.76rem;
-  color: var(--text-muted);
-  padding: 4px 6px 0;
-  line-height: 1.45;
-}
-.project-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 8px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.project-row:hover { background: var(--bg-hover); }
-.project-item.active .project-row {
-  background: var(--bg-lift);
-  box-shadow: 0 0 0 1px var(--accent-dim) inset;
-}
-.project-icon { display: flex; color: var(--accent); flex-shrink: 0; }
-.project-name {
-  flex: 1;
-  font-size: 0.86rem;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.project-count {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  background: var(--bg-input);
-  border-radius: 999px;
-  padding: 1px 7px;
-  min-width: 18px;
-  text-align: center;
-}
-.project-count:empty { display: none; }
-.project-settings { opacity: 0; transition: opacity 0.12s; flex-shrink: 0; }
-.project-row:hover .project-settings,
-.project-item.active .project-settings { opacity: 0.75; }
-.project-settings:hover { opacity: 1; }
-
-/* --- Project detail modal --- */
-.project-panel { max-width: 620px; height: auto; max-height: 86vh; }
-.project-body { padding: 16px 18px 20px; overflow-y: auto; }
-.project-section { margin-bottom: 22px; }
-.project-section h4 {
-  font-size: 0.78rem;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  margin-bottom: 5px;
-}
-.project-section textarea {
-  width: 100%;
-  margin: 8px 0;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
-  color: var(--text-primary);
-  font-family: inherit;
-  font-size: 0.86rem;
-  resize: vertical;
-  box-shadow: var(--shadow-sunken);
-}
-.project-drop-zone {
-  margin-top: 10px;
-  border: 1px dashed var(--accent-dim);
-  border-radius: var(--radius-sm);
-  padding: 12px;
-  background: rgba(16, 29, 42, 0.5);
-  transition: border-color 0.15s, background 0.15s;
-}
-.project-drop-zone.drag-over {
-  border-color: var(--accent);
-  background: var(--bg-lift);
-}
-.project-doc-list { list-style: none; display: flex; flex-direction: column; gap: 3px; }
-.project-doc {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-secondary);
-}
-.project-doc-name {
-  flex: 1;
-  font-size: 0.82rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.project-doc-meta { font-size: 0.72rem; color: var(--text-muted); flex-shrink: 0; }
-.project-doc-remove { opacity: 0.55; flex-shrink: 0; }
-.project-doc-remove:hover { opacity: 1; color: var(--danger); }
-.project-doc-empty {
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  line-height: 1.5;
-  padding: 2px 2px 8px;
-}
-.project-doc-actions { margin-top: 10px; }
-.project-drop-hint {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  text-align: center;
-  margin-top: 8px;
-}
-.project-link-row { display: flex; gap: 8px; margin-top: 12px; }
-.project-link-row input {
-  flex: 1;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 7px 14px;
-  color: var(--text-primary);
-  font-family: inherit;
-  font-size: 0.82rem;
-  box-shadow: var(--shadow-sunken);
-}
-.project-status {
-  font-size: 0.78rem;
-  color: var(--text-secondary);
-  min-height: 1.2em;
-  margin-bottom: 14px;
-}
-.project-status.ok { color: var(--accent); }
-.project-status.error { color: var(--danger); }
-.project-danger { border-top: 1px solid var(--border); padding-top: 16px; margin-bottom: 0; }
-
-/* --- Composer: agent toggle + chat mode --- */
-.agent-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  background: var(--bg-input);
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: color 0.15s, box-shadow 0.15s, background 0.15s;
-}
-.agent-toggle:hover { color: var(--text-secondary); }
-.agent-toggle.active {
-  color: #04262b;
-  background: linear-gradient(to bottom, var(--accent-hover), var(--accent) 60%, #1fb8c9);
-  border-color: #1a9aa8;
-  box-shadow: 0 0 12px var(--accent-glow), 0 1px 1px rgba(255, 255, 255, 0.35) inset;
-}
-.chat-mode-wrap { position: relative; flex-shrink: 0; }
-.chat-mode-btn {
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 6px 12px;
-  color: var(--text-secondary);
-  font-family: inherit;
-  font-size: 0.76rem;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: var(--shadow-sunken);
-}
-.chat-mode-btn:hover { color: var(--text-primary); }
-.chat-mode-menu {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
-  z-index: 60;
-  min-width: 260px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-card);
-  padding: 5px;
-}
-.chat-mode-item {
-  display: block;
-  width: 100%;
-  text-align: left;
-  background: none;
-  border: none;
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  cursor: pointer;
-  font-family: inherit;
-  color: var(--text-primary);
-}
-.chat-mode-item:hover { background: var(--bg-hover); }
-.chat-mode-item.selected { background: var(--bg-lift); }
-.chat-mode-item-name { display: block; font-size: 0.84rem; font-weight: 600; }
-.chat-mode-item-hint { display: block; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px; }
-
-/* --- Agent step trail --- */
-.agent-trail {
+/* --- MCP tool calls --- */
+.tool-trail {
   margin: 0 0 10px;
   border: 1px solid var(--accent-dim);
   border-radius: var(--radius-sm);
   background: rgba(16, 29, 42, 0.6);
   overflow: hidden;
 }
-.agent-trail-summary {
+.tool-trail-summary {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2559,60 +2326,60 @@ body.resizing-panel { cursor: ew-resize; user-select: none; }
   color: var(--accent);
   list-style: none;
 }
-.agent-trail-summary::-webkit-details-marker { display: none; }
-.agent-trail-spinner {
+.tool-trail-summary::-webkit-details-marker { display: none; }
+.tool-trail-spinner {
   width: 9px;
   height: 9px;
   border-radius: 50%;
   border: 2px solid var(--accent-dim);
   border-top-color: var(--accent);
-  animation: agent-spin 0.8s linear infinite;
+  animation: tool-spin 0.8s linear infinite;
   flex-shrink: 0;
 }
-@keyframes agent-spin { to { transform: rotate(360deg); } }
-.agent-trail.finished .agent-trail-summary { color: var(--text-muted); }
-.agent-trail-steps {
-  list-style: decimal inside;
-  padding: 2px 12px 10px;
+@keyframes tool-spin { to { transform: rotate(360deg); } }
+.tool-trail.finished .tool-trail-summary { color: var(--text-muted); }
+.tool-trail-steps {
+  list-style: none;
+  padding: 2px 11px 10px;
   margin: 0;
   font-size: 0.78rem;
+  line-height: 1.5;
+}
+.tool-call {
+  padding: 5px 0;
+  border-top: 1px solid rgba(30, 51, 68, 0.6);
   color: var(--text-secondary);
-  line-height: 1.55;
 }
-.agent-trail-steps li { margin-bottom: 3px; }
-
-/* --- Citations --- */
-.sources-box {
-  margin-top: 10px;
-  border-top: 1px solid var(--border);
-  padding-top: 8px;
+.tool-call:first-child { border-top: 0; }
+.tool-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--accent);
+  margin-right: 6px;
 }
-.sources-box summary {
-  font-size: 0.75rem;
+.tool-from {
+  font-size: 0.7rem;
   color: var(--text-muted);
-  cursor: pointer;
-}
-.sources-list {
-  list-style: none;
-  margin-top: 6px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.sources-list li {
-  font-size: 0.73rem;
   background: var(--bg-input);
-  border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 3px 10px;
-  color: var(--text-secondary);
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  padding: 1px 7px;
 }
-.sources-list a { color: var(--accent); text-decoration: none; }
-.sources-list a:hover { text-decoration: underline; }
+.tool-args,
+.tool-result {
+  display: block;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.tool-args { margin-top: 2px; }
+.tool-result { margin-top: 2px; font-style: italic; }
+.tool-call.running .tool-name { opacity: 0.7; }
+.tool-call.failed .tool-name,
+.tool-call.failed .tool-result { color: var(--danger); font-style: normal; }
+.tool-call.looping .tool-result { color: var(--warning); font-style: normal; }
+
+/* Says whether tools are attached at all — the difference between "MCP is
+   working" and "no servers named" is otherwise invisible. */
+.mcp-summary.ok { color: var(--accent); }
+.mcp-summary.warn { color: var(--warning); }
 
 /* --- Scholar Code --- */
 .code-view {
@@ -2878,8 +2645,6 @@ body.resizing-panel { cursor: ew-resize; user-select: none; }
   .setting-group input[type="password"],
   .setting-group textarea,
   .token-wrap input,
-  .project-section textarea,
-  .project-link-row input,
   .code-chat-composer textarea,
   .history-search input {
     font-size: 16px;
@@ -2895,13 +2660,11 @@ body.resizing-panel { cursor: ew-resize; user-select: none; }
   /* Apple's minimum touch target is 44x44pt. Growing an invisible box around
      each icon does not get there on a crowded row: neighbouring boxes overlap
      and steal each other's taps, which is worse than a slightly small target.
-     So the composer icons are given real 44px boxes — with the chat-mode pill
-     folded into the picker below 520px there is room for three icons, the
-     project picker and Send on a 375px screen. The artwork inside is
-     untouched; only the box around it grows. */
+     So the composer icons are given real 44px boxes — there is room for both
+     of them, the model picker and Send even on a 375px screen. The artwork
+     inside is untouched; only the box around it grows. */
   .attach-icon,
-  .folder-assign-icon,
-  .agent-toggle {
+  .folder-assign-icon {
     width: 44px;
     height: 44px;
   }
@@ -2944,59 +2707,8 @@ body.resizing-panel { cursor: ew-resize; user-select: none; }
   /* Exceptions: rows of small buttons packed side by side. A 44px box on each
      would overlap its neighbours, so these get real padding instead. */
   .msg-action-btn::after,
-  .project-doc-remove::after,
-  .project-settings::after,
   .history-item .icon-btn::after { content: none; }
   .msg-action-btn { padding-top: 8px; padding-bottom: 8px; }
-}
-
-/* Below this width the composer cannot hold six controls and still show a
-   readable project name, so the chat-mode pill folds into the project picker
-   (see renderProjectPicker) rather than squeezing everything. */
-@media (max-width: 520px) {
-  .chat-mode-wrap { display: none !important; }
-  .composer-controls { gap: 3px; }
-  /* The status dot says nothing the picker beside it doesn't — that reads
-     "Offline" whenever the dot would be red — so its width goes to the
-     project name, which is what actually gets truncated here. */
-  .composer-status-group > #status-indicator { display: none; }
-  /* Send is the anchor of the row; keep its label but let it tighten. */
-  .composer-send-group .send-button,
-  .composer-send-group .stop-button { padding-left: 14px; padding-right: 14px; }
-}
-
-/* The mode selector as it appears inside the project picker on phones. */
-.picker-mode-row {
-  display: flex;
-  gap: 6px;
-  padding: 4px 4px 10px;
-  margin-bottom: 6px;
-  border-bottom: 1px solid var(--border);
-}
-.picker-mode-row .picker-mode-btn {
-  flex: 1;
-  padding: 8px 6px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg-input);
-  color: var(--text-muted);
-  font-family: inherit;
-  font-size: 0.78rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-.picker-mode-row .picker-mode-btn.selected {
-  background: linear-gradient(to bottom, var(--accent-hover), var(--accent) 60%, #1fb8c9);
-  color: #04262b;
-  border-color: #1a9aa8;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
-}
-.picker-mode-label {
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  padding: 0 4px 6px;
 }
 
 /* The tab bar only exists in the phone layout. */
