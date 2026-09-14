@@ -1,13 +1,20 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.10.0';
-const APP_VERSION_DATE = '2026-09-10T12:00:00Z';
+const APP_VERSION = 'v0.11.0';
+const APP_VERSION_DATE = '2026-09-14T16:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.11.0', date: '2026-09-14T16:00:00Z', notes: [
+    'Scholar Code works the way Claude Code does: describe what you want and the files get written for you. No Apply button to hunt for — each write lands in the project as it arrives and shows up as a one-line "Created index.html · 34 lines" you can click to open, with the source folded behind it and one Undo for the whole batch',
+    'A new project starts empty instead of with a throwaway index.html/style.css/main.js to delete first — the first thing you ask for is the first thing that exists, whether that is an index.html, an App.jsx or a script',
+    'The coding chat moved to the left, docked beside the editor and resizable by dragging its edge. On a phone it slides over as a left drawer, open when you arrive and dismissed once there are files to look at — replacing the Files/Editor/Chat tab strip',
+    'Files are tabs across the top of the editor now rather than a tree in a third column',
+    'Run opens a full-view preview you exit with a button or Escape, instead of squeezing into a strip under the editor. It previews the project — pressing Run on a script shows the index.html that loads it — and the preview has a reload button',
+  ] },
   { version: 'v0.10.0', date: '2026-09-10T12:00:00Z', notes: [
     'AnythingLLM is gone. Scholar talks to LM Studio and nothing else — no backend switcher, no workspaces, no projects, no per-project documents or threads',
     'MCP tools now work, including web search. Chat runs through LM Studio\'s native /api/v1/chat endpoint, which is the only one that accepts `integrations` — the OpenAI-compatible endpoint silently cannot run tools at all, which is why this never worked before',

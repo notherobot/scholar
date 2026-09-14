@@ -11,7 +11,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="Scholar_favicon_32.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=0.10.0">
+  <link rel="stylesheet" href="style.css?v=0.11.0">
 </head>
 <body>
   <div id="app">
@@ -245,6 +245,9 @@
     <!-- Scholar Code -->
     <div id="code-view" class="code-view hidden">
       <header class="code-header">
+        <button id="code-chat-toggle" class="icon-btn code-chat-toggle" aria-label="Show chat" title="Show chat">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </button>
         <span class="code-title">Scholar Code</span>
         <span id="code-status" class="code-status"></span>
         <div class="code-header-actions">
@@ -254,30 +257,45 @@
         </div>
       </header>
 
-      <!-- Phone layout: three stacked panes each get ~200px on a 667px screen,
-           which is not enough to edit in. Below 900px they become tabs and one
-           pane owns the full height instead. -->
-      <div id="code-tabs" class="code-tabs" role="tablist">
-        <button type="button" class="code-tab" data-pane="files" role="tab">Files</button>
-        <button type="button" class="code-tab" data-pane="editor" role="tab">Editor</button>
-        <button type="button" class="code-tab" data-pane="chat" role="tab">Chat</button>
-      </div>
-
       <div class="code-body">
-        <aside class="code-sidebar">
-          <div class="code-sidebar-head">
-            <h4>Files</h4>
-            <button id="code-new-file" class="icon-btn" aria-label="New file" title="New file">
+        <!-- Chat is the primary surface and lives on the left, the way Claude
+             Code docks its conversation. On a phone it slides over the editor
+             as a drawer instead of splitting the width three ways. -->
+        <div id="code-chat-overlay" class="overlay hidden"></div>
+        <aside id="code-chat" class="code-chat">
+          <div id="code-chat-resize-handle" class="resize-handle resize-handle-right"></div>
+          <div class="code-chat-head">
+            <h4>Chat</h4>
+            <button id="code-chat-new" class="icon-btn" aria-label="New coding session" title="New coding session">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
             </button>
+            <button id="code-chat-hide" class="icon-btn code-chat-hide" aria-label="Hide chat" title="Hide chat">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
           </div>
-          <ul id="code-tree" class="code-tree"></ul>
+          <div id="code-chat-log" class="code-chat-log"></div>
+          <div class="code-chat-composer">
+            <p id="code-chat-context" class="code-chat-context"></p>
+            <textarea id="code-chat-input" rows="3" placeholder="Describe what you want to build…"></textarea>
+            <div class="code-chat-actions">
+              <button id="code-chat-send" class="btn-sm">Send</button>
+              <button id="code-chat-stop" class="btn-sm btn-sm-danger hidden">Stop</button>
+            </div>
+          </div>
         </aside>
 
         <main class="code-main">
+          <!-- Every project file is a tab. The project is small by nature here,
+               so a strip beats a tree and frees the whole left edge for chat. -->
+          <div class="code-filebar">
+            <div id="code-file-tabs" class="code-file-tabs"></div>
+            <button id="code-new-file" class="icon-btn code-newfile-btn" aria-label="New file" title="New file">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            </button>
+          </div>
           <div class="code-toolbar">
             <span id="code-filename" class="code-filename">No file</span>
-            <span id="code-save-state" class="code-save-state">Saved</span>
+            <span id="code-save-state" class="code-save-state"></span>
             <div class="code-toolbar-actions">
               <button id="code-run" class="btn-sm">Run</button>
               <button id="code-delete" class="btn-sm btn-sm-danger">Delete</button>
@@ -287,26 +305,30 @@
             <pre class="code-highlight-layer"><code id="code-highlight"></code></pre>
             <textarea id="code-editor" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off"></textarea>
           </div>
-          <div id="code-preview-wrap" class="code-preview-wrap hidden">
-            <div class="code-preview-head">
-              <span>Preview</span>
-              <button id="code-preview-close" class="icon-btn" aria-label="Close preview">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </div>
-            <iframe id="code-preview" sandbox="allow-scripts" title="Code preview"></iframe>
+          <div id="code-empty" class="code-empty hidden">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+            <p class="code-empty-title">No files yet</p>
+            <p class="code-empty-sub">Describe what you want to build in the chat and Scholar will create the files for you.</p>
+            <button id="code-empty-new" class="btn-sm">Create a file myself</button>
           </div>
         </main>
+      </div>
 
-        <aside class="code-chat">
-          <div id="code-chat-log" class="code-chat-log"></div>
-          <p id="code-chat-context" class="code-chat-context"></p>
-          <div class="code-chat-composer">
-            <textarea id="code-chat-input" rows="3" placeholder="Ask for a change — the reply can be applied straight to your files."></textarea>
-            <button id="code-chat-send" class="btn-sm">Send</button>
-            <button id="code-chat-stop" class="btn-sm btn-sm-danger hidden">Stop</button>
-          </div>
-        </aside>
+      <!-- Run takes over the whole view rather than splitting it with the
+           editor — a preview squeezed into 42% of a phone screen showed
+           nothing useful. Exit returns to the code exactly as it was. -->
+      <div id="code-preview-wrap" class="code-preview-overlay hidden">
+        <header class="code-preview-head">
+          <span class="code-preview-label">Preview</span>
+          <span id="code-preview-title" class="code-preview-title"></span>
+          <button id="code-preview-reload" class="icon-btn" aria-label="Reload preview" title="Reload">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          </button>
+          <button id="code-preview-close" class="icon-btn" aria-label="Close preview" title="Close preview">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </header>
+        <iframe id="code-preview" sandbox="allow-scripts" title="Code preview"></iframe>
       </div>
     </div>
 
@@ -324,12 +346,12 @@
     </div>
   </div>
 
-  <script src="markdown.js?v=0.10.0"></script>
+  <script src="markdown.js?v=0.11.0"></script>
   <script src="vendor/pdf.min.js"></script>
   <!-- Load order matters: lmstudio/code define things app.js calls from
        init(), which runs the moment app.js finishes evaluating. -->
-  <script src="lmstudio.js?v=0.10.0"></script>
-  <script src="code.js?v=0.10.0"></script>
-  <script src="app.js?v=0.10.0"></script>
+  <script src="lmstudio.js?v=0.11.0"></script>
+  <script src="code.js?v=0.11.0"></script>
+  <script src="app.js?v=0.11.0"></script>
 </body>
 </html>

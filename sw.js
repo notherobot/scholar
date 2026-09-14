@@ -1,5 +1,5 @@
 // Bump this on every release so old caches are purged (keep in sync with APP_VERSION in app.js)
-const CACHE_NAME = 'scholar-v0.10.0';
+const CACHE_NAME = 'scholar-v0.11.0';
 const ASSETS = [
   './',
   './index.html',
