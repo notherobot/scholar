@@ -1,13 +1,18 @@
 // === Version ===
 // Bump both together on every release (keep in sync with sw.js's CACHE_NAME
 // and the ?v= query strings in index.html).
-const APP_VERSION = 'v0.11.0';
-const APP_VERSION_DATE = '2026-09-14T16:00:00Z';
+const APP_VERSION = 'v0.12.0';
+const APP_VERSION_DATE = '2026-09-25T15:00:00Z';
 
 // Changelog, newest first. Each entry is one shipped version: its release
 // timestamp and the user-facing notes for that bump. The header dropdown
 // shows the newest 3; the "View last 10 updates" modal shows the newest 10.
 const CHANGELOG = [
+  { version: 'v0.12.0', date: '2026-09-25T15:00:00Z', notes: [
+    'Scholar Code is gone \u2014 the editor, file tabs, coding chat and Run preview are all removed. Scholar is a chat client again',
+    'The API token is now clearly optional everywhere. It was never actually enforced, but the setup screen said "required for MCP tools" and pushed you through creating one; blank is fine unless your server has Require Authentication turned on',
+    'Files you made in Scholar Code are still saved in this browser and were not deleted. Nothing in the app reads them any more \u2014 clearing site data removes them for good',
+  ] },
   { version: 'v0.11.0', date: '2026-09-14T16:00:00Z', notes: [
     'Scholar Code works the way Claude Code does: describe what you want and the files get written for you. No Apply button to hunt for — each write lands in the project as it arrives and shows up as a one-line "Created index.html · 34 lines" you can click to open, with the source folded behind it and one Undo for the whole batch',
     'A new project starts empty instead of with a throwaway index.html/style.css/main.js to delete first — the first thing you ask for is the first thing that exists, whether that is an index.html, an App.jsx or a script',
@@ -266,7 +271,6 @@ const setupError     = $('#setup-error');
 const setupToken     = $('#setup-token');
 const useLocalhost   = $('#use-localhost');
 
-const codeViewBtn    = $('#code-view-btn');
 
 const headerEl       = $('#header');
 const chatContainer  = $('#chat-container');
@@ -347,7 +351,6 @@ function init() {
     }
   });
   renderChangelog();
-  ScholarCode.init();
   loadSettings();
   loadSessions();
   loadFolders();
@@ -3296,7 +3299,6 @@ function setupListeners() {
     showSetup();
   });
 
-  if (codeViewBtn) codeViewBtn.addEventListener('click', () => ScholarCode.toggle());
 
   // Settings
   if (mcpServersInput) {

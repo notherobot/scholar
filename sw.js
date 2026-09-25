@@ -1,12 +1,11 @@
 // Bump this on every release so old caches are purged (keep in sync with APP_VERSION in app.js)
-const CACHE_NAME = 'scholar-v0.11.0';
+const CACHE_NAME = 'scholar-v0.12.0';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
   './lmstudio.js',
-  './code.js',
   './markdown.js',
   './vendor/pdf.min.js',
   './vendor/pdf.worker.min.js',
